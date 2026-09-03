@@ -23,8 +23,30 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PROCESSING' | 'COMPLETED'>('ALL');
   const [urgencyFilter, setUrgencyFilter] = useState<'ALL' | '特急' | '紧急' | '常规'>('ALL');
 
-  // Filter tasks
-  const filteredTasks = tasks.filter((t) => {
+  // Role-based visibility filtering (遵循最小查看和权限区分原则)
+  const isTaskVisibleToRole = (t: DispatchTask) => {
+    if (currentRole.level === 'branch') {
+      // 支队：查看全量（支队下发任务 + 各大队自发任务）
+      return true;
+    }
+    if (currentRole.level === 'brigade') {
+      // 大队：查看本大队创建的任务，或支队下发给本大队/本大队下辖中队的任务
+      if (t.creatorUnitId === currentRole.unitId) return true;
+      if (t.targetBrigadeIds.includes(currentRole.unitId)) return true;
+      if (t.executionNodes.some((n) => n.unitId === currentRole.unitId)) return true;
+      return false;
+    }
+    if (currentRole.level === 'squadron') {
+      // 中队：遵循最小查看原则，仅看派发至本中队的指令 (executionNodes 包含本中队)
+      return t.executionNodes.some((n) => n.unitId === currentRole.unitId);
+    }
+    return true;
+  };
+
+  const roleVisibleTasks = tasks.filter(isTaskVisibleToRole);
+
+  // Filter tasks based on UI search/filters
+  const filteredTasks = roleVisibleTasks.filter((t) => {
     const matchSearch =
       t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.taskNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -37,14 +59,14 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     return matchSearch && matchRule && matchStatus && matchUrgency;
   });
 
-  // Calculate quick metrics
-  const processingTasks = tasks.filter((t) => t.overallStatus === 'PROCESSING').length;
-  const completedTasks = tasks.filter((t) => t.overallStatus === 'COMPLETED').length;
+  // Calculate quick metrics based on role-visible tasks
+  const processingTasks = roleVisibleTasks.filter((t) => t.overallStatus === 'PROCESSING').length;
+  const completedTasks = roleVisibleTasks.filter((t) => t.overallStatus === 'COMPLETED').length;
   
   // Pending for current role
-  const myPendingTasks = tasks.filter((t) => {
+  const myPendingTasks = roleVisibleTasks.filter((t) => {
     const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
-    return myNode && (myNode.status === 'PENDING_SIGN' || myNode.status === 'SIGNED');
+    return myNode && (myNode.status === 'PENDING_SIGN' || myNode.status === 'SIGNED' || myNode.status === 'REJECTED');
   }).length;
 
   return (
@@ -100,6 +122,28 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
 
       {/* Filter and Search Bar */}
       <div className="bg-white border border-slate-200 p-3.5 rounded-lg space-y-3 shadow-xs">
+        {/* Role View Scope Indicator (遵循最小查看与部门权限原则) */}
+        <div className={`p-2.5 rounded-md border text-xs flex items-center justify-between ${
+          currentRole.level === 'branch'
+            ? 'bg-blue-50/80 border-blue-200 text-blue-900'
+            : currentRole.level === 'brigade'
+            ? 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+            : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+        }`}>
+          <div className="flex items-center space-x-2">
+            <Shield className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>【{currentRole.unitName}】当前数据范围：</strong>
+              {currentRole.level === 'branch' && '支队全域监管模式 —— 可查看全市各大队下发与中队流转指令及审批进度。'}
+              {currentRole.level === 'brigade' && '大队分级管辖模式 —— 仅查看本大队自发指令及支队下派本大队辖区的指令。'}
+              {currentRole.level === 'squadron' && '基层中队责任模式 —— 遵循最小查看原则，仅展示分配至本中队的待签收、处置与整改指令。'}
+            </span>
+          </div>
+          <span className="font-mono text-[11px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+            可见指令 {roleVisibleTasks.length} 条
+          </span>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Search input */}
           <div className="relative flex-1 min-w-[240px]">

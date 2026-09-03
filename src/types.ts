@@ -93,7 +93,10 @@ export interface TaskVehicle {
   disposalRecord?: ThirdPartyDisposalRecord;
   feedbackRemarks?: string;
   evidenceImages?: string[];
-  vehicleAuditStatus?: 'PENDING' | 'PASSED' | 'REJECTED';
+  vehicleAuditStatus?: 'PENDING' | 'BRIGADE_PASSED' | 'PASSED' | 'REJECTED';
+  brigadeAuditRemarks?: string;
+  branchAuditRemarks?: string;
+  rejectReason?: string;
   dynamicFeedbackValues?: Record<string, any>; // 动态配置的反馈要素字段值
 }
 

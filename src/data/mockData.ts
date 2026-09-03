@@ -213,7 +213,8 @@ export const INITIAL_TASKS: DispatchTask[] = [
         interceptedTime: '2026-09-01 10:15:30',
         disposalRecord: MOCK_THIRD_PARTY_RECORDS[0],
         feedbackRemarks: '城东一中队民警陈勇于凤起路执勤点拦截该车，驾驶人已现场处罚，当事人配合处理。',
-        vehicleAuditStatus: 'PASSED',
+        vehicleAuditStatus: 'BRIGADE_PASSED',
+        brigadeAuditRemarks: '大队核验无误，文书编号与时间有效，转呈支队终审。',
       },
       {
         id: 'v-02',
@@ -548,6 +549,90 @@ export const INITIAL_TASKS: DispatchTask[] = [
         operatorUnit: '市交警支队指挥中心',
         action: '支队审核通过',
         details: '审核通过车辆【浙AD88392】，尚有【浙E33981】未完成处置。',
+      }
+    ]
+  },
+  {
+    id: 'task-003',
+    taskNo: 'DD-20260902-105',
+    title: '【大队自发】辖区核心商业街区多次违法未处理高危车精准查处',
+    category: '违法查处',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-01',
+    creatorUnitName: '直属一大队 (市中心城区)',
+    creatorName: '李卫民 (大队长)',
+    createdAt: '2026-09-02 09:00:00',
+    dispatchTime: '2026-09-02 09:10:00',
+    deadline: '2026-09-02 18:00:00',
+    urgency: '常规',
+    completionRule: 'ANY_COMPLETE',
+    content: '直属一大队自发专项指令：对延安路、武林广场商圈频繁违停且关联5起以上非现场违法机动车【浙A8821C】进行巡查拦截。',
+    targetArea: '延安路、武林商圈周边支路',
+    feedbackElements: [
+      { key: 'third_party_doc', name: '六合一/综合应用平台处置凭证文书号', enabled: true, required: true, type: 'third_party_doc', description: '处罚决定书编号' },
+      { key: 'punish_result', name: '现场处置结果与行政强制措施', enabled: true, required: true, type: 'select', options: ['现场处罚', '扣留机动车', '警告教育'] },
+      { key: 'location', name: '拦截执勤卡点或具体路段', enabled: true, required: true, type: 'text' },
+      { key: 'site_photo', name: '现场核查佐证照片', enabled: true, required: true, type: 'image' },
+    ],
+    vehicles: [
+      {
+        id: 'v-301',
+        plateNo: '浙A8821C',
+        plateType: '小型汽车',
+        ownerName: '朱*国',
+        vehicleModel: '宝马3系 白色',
+        riskReason: '违停拒不纠正，累计6起违法未处理',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['squadron-01-01', 'squadron-01-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-s301',
+        taskId: 'task-003',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [
+          {
+            vehicleId: 'v-301',
+            plateNo: '浙A8821C',
+            plateType: '小型汽车',
+            isIntercepted: false,
+            auditStatus: 'PENDING',
+          }
+        ]
+      },
+      {
+        id: 'node-s302',
+        taskId: 'task-003',
+        unitId: 'squadron-01-02',
+        unitName: '一大队·城西二中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [
+          {
+            vehicleId: 'v-301',
+            plateNo: '浙A8821C',
+            plateType: '小型汽车',
+            isIntercepted: false,
+            auditStatus: 'PENDING',
+          }
+        ]
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-301',
+        timestamp: '2026-09-02 09:10:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队下发指令',
+        details: '直属一大队自发指令下达至城东一中队、城西二中队，要求限时完成拦截。',
       }
     ]
   }
