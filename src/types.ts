@@ -1,0 +1,204 @@
+export type OrgLevel = 'branch' | 'brigade' | 'squadron'; // 支队 | 大队 | 中队
+
+export type PlateType = 
+  | '大型汽车' 
+  | '小型汽车' 
+  | '新能源大车' 
+  | '新能源小车' 
+  | '挂车' 
+  | '教练车' 
+  | '警用汽车' 
+  | '普通摩托车';
+
+export interface OrgUnit {
+  id: string;
+  name: string;
+  code: string;
+  level: OrgLevel;
+  parentId?: string;
+  leader: string;
+  phone: string;
+}
+
+export type CompletionRule = 'ANY_COMPLETE' | 'ALL_COMPLETE'; // 任一完成 | 全部完成
+
+export type NodeStatus = 
+  | 'PENDING_DISPATCH' // 待下发
+  | 'PENDING_SIGN'     // 待签收
+  | 'SIGNED'           // 已签收(处理中)
+  | 'DISPATCHED_DOWN'  // 已下发下级(大队转派中队)
+  | 'FEEDBACK_SUBMITTED' // 已提交反馈(待审)
+  | 'REJECTED'         // 已驳回(待再次反馈)
+  | 'AUDITED_PASS'     // 审核通过(已完结)
+  | 'OVERALL_COMPLETED';// 整体已完结
+
+export interface ThirdPartyDisposalRecord {
+  recordId: string;
+  plateNo: string;
+  plateType: PlateType;
+  disposalTime: string; // 处置时间 (YYYY-MM-DD HH:mm:ss)
+  policeName: string;
+  policeId: string;
+  location: string;
+  punishmentType: '现场处罚' | '扣留机动车' | '警告教育' | '移交办案' | '检验排查';
+  punishmentCode: string; // 处罚决定书编号 / 强制措施凭证号
+  illegalBehavior: string;
+  verified: boolean; // 是否有效(处置时间必须晚于指令下发时间)
+  notes?: string;
+}
+
+export type TaskCategory = 
+  | '车辆缉查' 
+  | '隐患治理' 
+  | '违法查处' 
+  | '重点管控' 
+  | '专项整治' 
+  | '其他';
+
+export interface FeedbackElementConfig {
+  key: string;
+  name: string;
+  enabled: boolean;
+  required: boolean;
+  type: 'text' | 'select' | 'image' | 'third_party_doc' | 'number' | 'radio';
+  options?: string[];
+  placeholder?: string;
+  description?: string;
+}
+
+export interface TaskAttachment {
+  id: string;
+  name: string;
+  size: string;
+  type: string;
+  uploadedAt: string;
+  uploadedBy: string;
+  url?: string;
+}
+
+export interface TaskVehicle {
+  id: string;
+  plateNo: string;
+  plateType: PlateType;
+  ownerName?: string;
+  vehicleModel?: string;
+  vehicleColor?: string;
+  riskReason: string; // 布控/下发原因 (如：多次违法未处理、重点嫌疑车辆、逾期未检验等)
+  
+  // 处置与反馈状态 (全局汇总 or 单元内部状态)
+  isIntercepted: boolean;
+  interceptedByUnitId?: string;
+  interceptedByUnitName?: string;
+  interceptedTime?: string;
+  disposalRecord?: ThirdPartyDisposalRecord;
+  feedbackRemarks?: string;
+  evidenceImages?: string[];
+  vehicleAuditStatus?: 'PENDING' | 'PASSED' | 'REJECTED';
+  dynamicFeedbackValues?: Record<string, any>; // 动态配置的反馈要素字段值
+}
+
+// 每个中队或大队对应的具体执行节点
+export interface TaskExecutionNode {
+  id: string;
+  taskId: string;
+  unitId: string;
+  unitName: string;
+  unitLevel: OrgLevel;
+  parentId?: string; // 如果是中队节点，指向对应大队节点id
+  
+  status: NodeStatus;
+  
+  signedTime?: string;
+  signedBy?: string;
+  
+  dispatchedDownTime?: string; // 大队下发中队时间
+  dispatchedToSquadronIds?: string[]; // 下发给哪些中队
+  
+  // 车辆处置清单 (本单元负责的车辆状态)
+  vehiclesStatus: {
+    vehicleId: string;
+    plateNo: string;
+    plateType: PlateType;
+    isIntercepted: boolean;
+    disposalRecord?: ThirdPartyDisposalRecord;
+    feedbackRemarks?: string;
+    evidenceImages?: string[];
+    auditStatus: 'PENDING' | 'SUBMITTED' | 'PASSED' | 'REJECTED';
+    rejectReason?: string;
+  }[];
+  
+  feedbackTime?: string;
+  feedbackBy?: string;
+  feedbackSummary?: string;
+  
+  // 审核信息
+  brigadeAudit?: {
+    auditor: string;
+    auditTime: string;
+    result: 'PASS' | 'REJECT';
+    remarks: string;
+  };
+  
+  branchAudit?: {
+    auditor: string;
+    auditTime: string;
+    result: 'PASS' | 'REJECT';
+    remarks: string;
+  };
+}
+
+export interface DispatchTask {
+  id: string;
+  taskNo: string; // 指令编号, 如 ZD-20260901-001
+  title: string;
+  category: TaskCategory; // 调度/指令类别 (车辆缉查, 隐患治理, 违法查处等)
+  creatorLevel: 'branch' | 'brigade';
+  creatorUnitId: string;
+  creatorUnitName: string;
+  creatorName: string;
+  createdAt: string;
+  dispatchTime: string;
+  deadline: string;
+  urgency: '特急' | '紧急' | '常规';
+  
+  completionRule: CompletionRule; // 任一完成 | 全部完成
+  
+  content: string; // 指令处置要求
+  targetArea?: string;
+  
+  // 动态反馈要素配置 (可配置是否启用及是否必填)
+  feedbackElements?: FeedbackElementConfig[];
+  
+  // 附件清单
+  attachments?: TaskAttachment[];
+  
+  vehicles: TaskVehicle[];
+  
+  targetBrigadeIds: string[]; // 目标大队列表
+  
+  // 执行拓扑节点
+  executionNodes: TaskExecutionNode[];
+  
+  // 全局指令状态
+  overallStatus: 'PROCESSING' | 'COMPLETED' | 'OVERDUE';
+  completedTime?: string;
+  completionSummary?: string;
+  
+  // 历史流转日志
+  actionLogs: {
+    id: string;
+    timestamp: string;
+    operatorName: string;
+    operatorUnit: string;
+    action: string;
+    details: string;
+  }[];
+}
+
+export interface UserRoleContext {
+  unitId: string;
+  unitName: string;
+  level: OrgLevel;
+  userName: string;
+  policeNo: string;
+}
