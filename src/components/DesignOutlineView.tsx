@@ -10,7 +10,7 @@ export const DesignOutlineView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'architecture' | 'pages' | 'workflow' | 'error_correction' | 'verification' | 'stats_qa'>('architecture');
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 text-slate-800">
+    <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6 text-slate-800">
       {/* Hero Banner */}
       <div className="relative overflow-hidden rounded-xl bg-white border border-slate-200 p-6 sm:p-7 shadow-xs">
         <div className="relative z-10 space-y-2.5">
@@ -36,7 +36,7 @@ export const DesignOutlineView: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {[
           { id: 'architecture', label: '1. 业务架构与模型设计', icon: Layers },
-          { id: 'pages', label: '2. 6大子系统页面与功能矩阵', icon: Monitor },
+          { id: 'pages', label: '2. 8大系统菜单与核心交互矩阵', icon: Monitor },
           { id: 'workflow', label: '3. 三级流转与双通道拓扑', icon: GitBranch },
           { id: 'error_correction', label: '4. 错件退回/撤回与纠错机制', icon: Undo2 },
           { id: 'verification', label: '5. 车辆查验与凭证高亮核对', icon: CheckSquare },

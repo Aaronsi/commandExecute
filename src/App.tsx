@@ -7,6 +7,7 @@ import { WorkbenchView } from './components/WorkbenchView';
 import { TaskListView } from './components/TaskListView';
 import { WarningListView } from './components/WarningListView';
 import { StatsDashboard } from './components/StatsDashboard';
+import { PunishStatsView } from './components/PunishStatsView';
 import { DesignOutlineView } from './components/DesignOutlineView';
 import { TaskCreationModal } from './components/TaskCreationModal';
 import { TaskDetailModal } from './components/TaskDetailModal';
@@ -15,8 +16,8 @@ import { INITIAL_TASKS } from './data/mockData';
 
 export default function App() {
   const [tasks, setTasks] = useState<DispatchTask[]>(INITIAL_TASKS);
-  // Default to tasks (指令管理) or todo (我的待办)
-  const [activeView, setActiveView] = useState<MainNavView>('tasks');
+  // Default to workbench or branch_home
+  const [activeView, setActiveView] = useState<MainNavView>('branch_home');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Current user role context
@@ -31,6 +32,13 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<DispatchTask | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<DispatchTask | null>(null);
+
+  // Todo view filter state (for jump from Workbench)
+  const [todoFilter, setTodoFilter] = useState<{
+    initialTab?: string;
+    filterCategory?: string;
+    filterUrgency?: string;
+  }>({});
 
   // Handlers
   const handleCreateTask = (newTask: DispatchTask) => {
@@ -53,6 +61,19 @@ export default function App() {
   const handleReDispatchTask = (task: DispatchTask) => {
     setEditingTask(task);
     setIsCreateModalOpen(true);
+  };
+
+  // Jump to Todo from Workbench with presets
+  const handleNavigateToTodo = (
+    tabKey?: string,
+    filter?: { category?: string; urgency?: string }
+  ) => {
+    setTodoFilter({
+      initialTab: tabKey,
+      filterCategory: filter?.category,
+      filterUrgency: filter?.urgency,
+    });
+    setActiveView('todo');
   };
 
   // Compute pending items for current role
@@ -105,20 +126,37 @@ export default function App() {
           warningCount={warningCount}
         />
 
-        {/* View Router / Content Body */}
+        {/* View Router / Content Body (1.支队首页 2.工作台 3.指令管理 4.我的待办 5.指令督办 6.工作量统计 7.违法处罚统计 8.设计大纲与规范) */}
         <main className="flex-1 overflow-y-auto">
-          {/* 1. 我的待办 (待签收、待反馈、待审核) */}
-          {(activeView === 'todo' || activeView === 'workbench') && (
-            <MyTodoView
+          {/* 1. 支队首页 */}
+          {activeView === 'branch_home' && (
+            <BranchHomeView
               tasks={tasks}
-              currentRole={currentRole}
               onSelectTask={setSelectedTask}
-              onUpdateTask={handleUpdateTask}
               onNavigateToManagement={() => setActiveView('tasks')}
+              onOpenCreateModal={() => {
+                setEditingTask(null);
+                setIsCreateModalOpen(true);
+              }}
             />
           )}
 
-          {/* 2. 指令管理 (综合台账、下发、撤销、退单、多维查询) */}
+          {/* 2. 工作台 (展示各待办指令的统计数、业务类别与紧急程度，支持点击直穿待办) */}
+          {activeView === 'workbench' && (
+            <WorkbenchView
+              tasks={tasks}
+              currentRole={currentRole}
+              onSelectTask={setSelectedTask}
+              onNavigateToTodo={handleNavigateToTodo}
+              onNavigateToManagement={(filter) => setActiveView('tasks')}
+              onOpenCreateModal={() => {
+                setEditingTask(null);
+                setIsCreateModalOpen(true);
+              }}
+            />
+          )}
+
+          {/* 3. 指令管理 (综合台账、下发、撤销、退单、多维全要素查询) */}
           {activeView === 'tasks' && (
             <TaskListView
               tasks={tasks}
@@ -133,20 +171,22 @@ export default function App() {
             />
           )}
 
-          {/* 3. 支队首页 */}
-          {activeView === 'branch_home' && (
-            <BranchHomeView
+          {/* 4. 我的待办 (按登录用户权限展示不同待办页签：签收、反馈、审核、退单) */}
+          {activeView === 'todo' && (
+            <MyTodoView
               tasks={tasks}
+              currentRole={currentRole}
               onSelectTask={setSelectedTask}
+              onUpdateTask={handleUpdateTask}
               onNavigateToManagement={() => setActiveView('tasks')}
-              onOpenCreateModal={() => {
-                setEditingTask(null);
-                setIsCreateModalOpen(true);
-              }}
+              onReDispatchTask={handleReDispatchTask}
+              initialTab={todoFilter.initialTab}
+              filterCategory={todoFilter.filterCategory}
+              filterUrgency={todoFilter.filterUrgency}
             />
           )}
 
-          {/* 4. 指令异常预警 (Warning Center) */}
+          {/* 5. 指令督办 (原指令异常预警) */}
           {activeView === 'warnings' && (
             <WarningListView
               tasks={tasks}
@@ -158,10 +198,17 @@ export default function App() {
             />
           )}
 
-          {/* 5. 工作量统计 (KPI / Stats Dashboard) */}
-          {activeView === 'stats' && <StatsDashboard tasks={tasks} />}
+          {/* 6. 工作量统计 (多周期违法时间筛选、多维条件、大队/中队下钻、Excel导出) */}
+          {activeView === 'stats' && (
+            <StatsDashboard tasks={tasks} currentRole={currentRole} />
+          )}
 
-          {/* 6. 设计规范与架构大纲 */}
+          {/* 7. 违法处罚统计 (违法时间筛选、违法行为筛选、查处数、处罚数、处罚率、Excel导出) */}
+          {activeView === 'punish_stats' && (
+            <PunishStatsView tasks={tasks} currentRole={currentRole} />
+          )}
+
+          {/* 8. 设计规范与架构大纲 */}
           {activeView === 'outline' && <DesignOutlineView />}
         </main>
 

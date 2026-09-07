@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { DispatchTask, CompletionRule, UserRoleContext, TaskCategory, OrgUnit } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
+import { Pagination } from './Pagination';
 
 interface TaskListViewProps {
   tasks: DispatchTask[];
@@ -34,6 +35,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [urgencyFilter, setUrgencyFilter] = useState<'ALL' | '特急' | '紧急' | '常规'>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
+  // 分页状态 (满足需求：查询结果增加分页显示)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
   // 纠错弹窗状态：错件撤销
   const [cancelModalTask, setCancelModalTask] = useState<DispatchTask | null>(null);
   const [cancelReasonPreset, setCancelReasonPreset] = useState('派发责任单位错误');
@@ -58,6 +63,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     setRuleFilter('ALL');
     setUrgencyFilter('ALL');
     setStatusFilter('ALL');
+    setCurrentPage(1);
   };
 
   // Role-based visibility filtering (遵循交警权限与最小查看原则)
@@ -136,6 +142,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
 
     return true;
   });
+
+  // 分页计算
+  const totalTasks = filteredTasks.length;
+  const totalPages = Math.max(1, Math.ceil(totalTasks / pageSize));
+  const validPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (validPage - 1) * pageSize;
+  const paginatedTasks = filteredTasks.slice(startIndex, startIndex + pageSize);
 
   // 判断工单是否具备“未签收撤销”条件：
   // 1. 发令上级操作 (支队发起的由支队撤销，大队自发的由大队撤销)
@@ -357,42 +370,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   ];
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-5 space-y-4">
-      {/* 顶部职责与权限提示条 (已完全去除上方的指标卡片) */}
-      <div
-        className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs ${
-          currentRole.level === 'branch'
-            ? 'bg-blue-50/80 border-blue-200 text-blue-900'
-            : currentRole.level === 'brigade'
-            ? 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
-            : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-        }`}
-      >
-        <div className="flex items-center space-x-2">
-          <Shield className="w-4 h-4 shrink-0 text-blue-700" />
-          <span>
-            <strong>【指令管理台账】当前登录席位：{currentRole.unitName}</strong> · 
-            {currentRole.level === 'branch' && ' 具备全域指令发起、全流程监控、未签收错件撤销、退回修改与重新下发权限。'}
-            {currentRole.level === 'brigade' && ' 具备本大队指令下发、已创建指令再下发下属中队、退单协商与错件撤销权限。'}
-            {currentRole.level === 'squadron' && ' 遵循最小查看原则，仅展示本中队参与责任指令，支持派错件申请退回修改。'}
-          </span>
-        </div>
-        <div className="flex items-center space-x-2 shrink-0">
-          <span className="font-mono text-[11px] font-bold bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
-            检索匹配：{filteredTasks.length} / {roleVisibleTasks.length} 条
-          </span>
-          {currentRole.level !== 'squadron' && (
-            <button
-              onClick={onOpenCreateModal}
-              className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-md shadow-xs transition active:scale-95"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>新建下发指令</span>
-            </button>
-          )}
-        </div>
-      </div>
-
+    <div className="max-w-[1600px] mx-auto px-6 py-5 space-y-4">
       {/* 结构化多维查询条件表单 (满足需求：指令编号、指令标题、指令业务类别、车辆号牌、责任单位、完成判定规则、紧急程度等) */}
       <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3.5 shadow-xs">
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
@@ -400,15 +378,6 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             <Filter className="w-3.5 h-3.5 text-blue-600" />
             <span>交管指令组合检索条件</span>
             <span className="text-[11px] font-normal text-slate-400">支持模糊匹配与多字段精确交叉过滤</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded border border-slate-200 transition"
-            >
-              重置条件
-            </button>
           </div>
         </div>
 
@@ -538,6 +507,26 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             </select>
           </div>
         </div>
+
+        {/* 底部重置与查询按钮 (满足需求：重置按钮放在查询条件底部；同时在重置按钮后面增加 查询 按钮) */}
+        <div className="flex items-center justify-end space-x-2.5 pt-3 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={handleResetFilters}
+            className="px-4 py-1.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md border border-slate-200 transition flex items-center space-x-1.5 cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+            <span>重置</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrentPage(1)}
+            className="px-5 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-xs transition flex items-center space-x-1.5 font-semibold cursor-pointer"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span>查询</span>
+          </button>
+        </div>
       </div>
 
       {/* 指令列表 */}
@@ -548,13 +537,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             <p className="text-xs">未查询到符合条件的交管指令记录</p>
             <button
               onClick={handleResetFilters}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-blue-600 hover:underline cursor-pointer"
             >
               清空筛选条件并重新检索
             </button>
           </div>
         ) : (
-          filteredTasks.map((task) => {
+          paginatedTasks.map((task) => {
             const isCompleted = task.overallStatus === 'COMPLETED';
             const isCancelled = task.overallStatus === 'CANCELLED_ERROR';
             const isReturnedDraft = task.overallStatus === 'RETURNED_DRAFT';
@@ -829,6 +818,21 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           })
         )}
       </div>
+
+      {/* 分页控制器 (满足需求：共**条 每页显示多少条 上一页箭头 具体页数 下一页箭头) */}
+      {filteredTasks.length > 0 && (
+        <Pagination
+          total={totalTasks}
+          currentPage={validPage}
+          pageSize={pageSize}
+          pageSizeOptions={[10, 20, 30, 40, 50]}
+          onPageChange={(page) => setCurrentPage(page)}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
 
       {/* 弹窗 1：未签收错件撤销确认 */}
       {cancelModalTask && (

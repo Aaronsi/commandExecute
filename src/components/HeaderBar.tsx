@@ -26,11 +26,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   warningCount = 5,
 }) => {
   const [openTabs, setOpenTabs] = useState<MainNavView[]>([
-    'todo',
-    'tasks',
     'branch_home',
+    'workbench',
+    'tasks',
+    'todo',
     'warnings',
     'stats',
+    'punish_stats',
   ]);
 
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
@@ -38,23 +40,25 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   // Tab display names
   const tabNames: Record<MainNavView, string> = {
-    todo: '我的待办',
-    tasks: '指令管理',
     branch_home: '支队首页',
-    warnings: '指令异常预警',
-    stats: '工作量统计',
-    outline: '设计大纲与规范',
     workbench: '工作台',
+    tasks: '指令管理',
+    todo: '我的待办',
+    warnings: '指令督办',
+    stats: '工作量统计',
+    punish_stats: '违法处罚统计',
+    outline: '设计大纲与规范',
   };
 
   const breadcrumbName: Record<MainNavView, string> = {
-    todo: '我的待办',
-    tasks: '指令管理',
     branch_home: '支队首页',
-    warnings: '指令异常预警',
-    stats: '工作量统计',
-    outline: '设计大纲与规范',
     workbench: '工作台',
+    tasks: '指令管理',
+    todo: '我的待办',
+    warnings: '指令督办',
+    stats: '工作量统计',
+    punish_stats: '违法处罚统计',
+    outline: '设计大纲与规范',
   };
 
   const rolePresets: { label: string; role: UserRoleContext }[] = [

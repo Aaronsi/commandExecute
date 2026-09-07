@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   CheckSquare, Clock, AlertTriangle, AlertCircle, RotateCcw, 
   Shield, CheckCircle2, ChevronRight, Eye, Send, Car, Building2,
-  FileCheck, GitBranch, ArrowRight, UserCheck, Check, X, Ban
+  FileCheck, GitBranch, ArrowRight, UserCheck, Check, X, Ban,
+  Search, Filter, RefreshCw, Layers, BellRing, ChevronDown, CheckCircle
 } from 'lucide-react';
 import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
+import { Pagination } from './Pagination';
 
 interface MyTodoViewProps {
   tasks: DispatchTask[];
@@ -13,9 +15,10 @@ interface MyTodoViewProps {
   onSelectTask: (task: DispatchTask) => void;
   onUpdateTask: (updatedTask: DispatchTask) => void;
   onNavigateToManagement: () => void;
+  initialTab?: string;
+  filterCategory?: string;
+  filterUrgency?: string;
 }
-
-type TodoCategory = 'ALL' | 'SIGN' | 'FEEDBACK' | 'AUDIT' | 'RETURN';
 
 export const MyTodoView: React.FC<MyTodoViewProps> = ({
   tasks,
@@ -23,15 +26,74 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
   onSelectTask,
   onUpdateTask,
   onNavigateToManagement,
+  initialTab,
+  filterCategory,
+  filterUrgency,
 }) => {
-  const [activeCategory, setActiveCategory] = useState<TodoCategory>('ALL');
+  // 1. 中队角色待办分类
+  // PENDING_SIGN: 待我签收
+  // PENDING_FEEDBACK: 待处置反馈
+  // REJECTED_FIX: 驳回待整改
+  // 2. 大队角色待办分类
+  // BRIGADE_AUDIT: 待大队初审
+  // BRIGADE_SIGN: 待我签收 (大队直办)
+  // BRIGADE_DISPATCH_DOWN: 待转派中队
+  // RETURN_CONFIRM: 错件退单审批
+  // 3. 支队角色待办分类
+  // BRANCH_AUDIT: 待支队终审
+  // RETURN_CONFIRM: 错件退单审批
+  // RETURNED_DRAFT: 错件待更正重发
+  // OVERDUE_SUPERVISE: 逾期催办督办
+
+  const defaultTab = useMemo(() => {
+    if (initialTab) return initialTab;
+    if (currentRole.level === 'squadron') return 'PENDING_SIGN';
+    if (currentRole.level === 'brigade') return 'BRIGADE_AUDIT';
+    return 'BRANCH_AUDIT';
+  }, [currentRole.level, initialTab]);
+
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(filterCategory || 'ALL');
+  const [selectedUrgency, setSelectedUrgency] = useState<string>(filterUrgency || 'ALL');
+
+  // 分页状态 (满足需求：每个页签下的待办列表记录都要有分页显示)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm, selectedCategory, selectedUrgency]);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (filterCategory) {
+      setSelectedCategory(filterCategory);
+    }
+  }, [filterCategory]);
+
+  useEffect(() => {
+    if (filterUrgency) {
+      setSelectedUrgency(filterUrgency);
+    }
+  }, [filterUrgency]);
 
   // 退单申请弹窗状态
   const [returnDialogTask, setReturnDialogTask] = useState<DispatchTask | null>(null);
   const [returnPreset, setReturnPreset] = useState('【非本辖区】车辆已驶离进入其他管辖大队');
   const [returnDetail, setReturnDetail] = useState('');
 
-  // 1. 待我签收 (Pending Sign)
+  // 催办弹窗状态
+  const [superviseToast, setSuperviseToast] = useState<string | null>(null);
+
+  // === 各种具体待办任务提取 ===
+
+  // 1. 待我签收 (中队 & 大队直办)
   const pendingSignTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
@@ -40,76 +102,289 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     });
   }, [tasks, currentRole.unitId]);
 
-  // 2. 待我反馈 (Pending Feedback)
+  // 2. 待处置反馈 (中队路面执勤席 / 大队直办)
   const pendingFeedbackTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
       const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
       if (!myNode) return false;
-      // 已签收状态，或者提交了部分反馈
       if (myNode.status === 'SIGNED' || myNode.status === 'FEEDBACK_SUBMITTED') {
-        // 检查是否还有未通过终审的车辆或被驳回的车辆
+        // 还有未完成审核通过的车辆
         return t.vehicles.some(
-          (v) => v.vehicleAuditStatus === 'PENDING' || v.vehicleAuditStatus === 'REJECTED'
+          (v) => !v.isIntercepted || v.vehicleAuditStatus === 'PENDING'
         );
       }
       return false;
     });
   }, [tasks, currentRole.unitId]);
 
-  // 3. 待我审核 (Pending Audit)
-  // 大队用户：审核中队提交上来的反馈
-  // 支队用户：审核大队通过或大队直办提交的终审
-  const pendingAuditTasks = useMemo(() => {
+  // 3. 驳回待整改 (中队)
+  const rejectedFixTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
-
-      if (currentRole.level === 'branch') {
-        // 支队终审待办：有车辆处于待支队终审状态
-        // 即大队已初审通过(BRIGADE_APPROVED) 或者大队直办反馈(BRIGADE_DIRECT)且总状态为PENDING
-        return t.vehicles.some((v) => {
-          if (v.vehicleAuditStatus !== 'PENDING') return false;
-          // 查看对应节点
-          const nodeWithFeedback = t.executionNodes.find((n) =>
-            n.vehiclesStatus?.some((vs) => vs.vehicleId === v.id && vs.isIntercepted)
-          );
-          if (!nodeWithFeedback) return false;
-          // 若中队提交，需等大队初审通过后再到支队
-          if (nodeWithFeedback.unitLevel === 'squadron') {
-            return v.brigadeAuditResult === 'PASS';
-          }
-          return true;
-        });
-      }
-
-      if (currentRole.level === 'brigade') {
-        // 大队初审待办：本大队下属中队提交了反馈，但尚未完成大队初审
-        const squadronNodes = t.executionNodes.filter(
-          (n) => n.unitLevel === 'squadron' && n.parentId === `node-${currentRole.unitId}`
-        );
-        return squadronNodes.some((n) =>
-          n.vehiclesStatus?.some(
-            (vs) => vs.isIntercepted && vs.auditStatus === 'PENDING'
-          )
-        );
-      }
-
-      return false;
+      const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
+      if (!myNode) return false;
+      return t.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED');
     });
-  }, [tasks, currentRole.level, currentRole.unitId]);
+  }, [tasks, currentRole.unitId]);
 
-  // 4. 待我审批退单 (Pending Return Confirm)
-  // 上级指挥长审核下级提出的退单申请
+  // 4. 待大队初审 (大队)
+  const brigadeAuditTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (t.overallStatus !== 'PROCESSING') return false;
+      // 找出本大队辖区中队提交的反馈待大队初审
+      const squadronNodes = t.executionNodes.filter(
+        (n) => n.unitLevel === 'squadron' && n.parentId === `node-${currentRole.unitId}`
+      );
+      return squadronNodes.some((n) =>
+        n.vehiclesStatus?.some(
+          (vs) => vs.isIntercepted && vs.auditStatus === 'PENDING'
+        )
+      );
+    });
+  }, [tasks, currentRole.unitId]);
+
+  // 5. 待转派中队 (大队: 支队下发至大队，大队尚未转派给下属中队)
+  const brigadeDispatchDownTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (t.overallStatus !== 'PROCESSING') return false;
+      const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
+      // 大队已签收，但还没有子中队节点
+      if (!myNode) return false;
+      const hasSquadrons = t.executionNodes.some(
+        (n) => n.unitLevel === 'squadron' && n.parentId === myNode.id
+      );
+      return (myNode.status === 'SIGNED' || myNode.status === 'PENDING_SIGN') && !hasSquadrons;
+    });
+  }, [tasks, currentRole.unitId]);
+
+  // 6. 待审批退单申请 (上级指挥员：大队审核中队退单 / 支队审核大队退单)
   const pendingReturnConfirmTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
       if (t.returnRequest?.status !== 'PENDING_CONFIRM') return false;
-      // 是由本单位下发的，或者支队权限
-      return t.creatorUnitId === currentRole.unitId || currentRole.level === 'branch';
+      if (currentRole.level === 'branch') return true;
+      if (currentRole.level === 'brigade') {
+        // 下级中队发起的退单
+        return t.returnRequest.requestedByUnitId.startsWith('squadron-01') || t.creatorUnitId === currentRole.unitId;
+      }
+      return false;
     });
   }, [tasks, currentRole.level, currentRole.unitId]);
 
-  // 一键签收
+  // 7. 待支队终审 (支队)
+  const branchAuditTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (t.overallStatus !== 'PROCESSING') return false;
+      // 车辆待终审：大队初审通过或者直属大队直接反馈
+      return t.vehicles.some((v) => {
+        if (v.vehicleAuditStatus !== 'PENDING') return false;
+        const node = t.executionNodes.find((n) =>
+          n.vehiclesStatus?.some((vs) => vs.vehicleId === v.id && vs.isIntercepted)
+        );
+        if (!node) return false;
+        if (node.unitLevel === 'squadron') {
+          return v.brigadeAuditRemarks || true;
+        }
+        return true;
+      });
+    });
+  }, [tasks]);
+
+  // 8. 错件待更正重发 (支队指挥长)
+  const returnedDraftTasks = useMemo(() => {
+    return tasks.filter((t) => t.overallStatus === 'RETURNED_DRAFT');
+  }, [tasks]);
+
+  // 9. 超期催办督办 (支队/大队督办)
+  const overdueSuperviseTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if (t.overallStatus !== 'PROCESSING') return false;
+      const nowTime = new Date().getTime();
+      const deadlineTime = new Date(t.deadline.replace(/-/g, '/')).getTime();
+      return deadlineTime < nowTime || t.urgency === '特急';
+    });
+  }, [tasks]);
+
+  // 依据用户当前角色确定可显示的页签清单
+  const roleTabs = useMemo(() => {
+    if (currentRole.level === 'squadron') {
+      return [
+        {
+          key: 'PENDING_SIGN',
+          label: '待我签收',
+          count: pendingSignTasks.length,
+          icon: Clock,
+          color: 'text-blue-600 bg-blue-50 border-blue-200',
+          badgeColor: 'bg-blue-600 text-white',
+          desc: '接收上级下达指令并在规定时限内核验签收',
+        },
+        {
+          key: 'PENDING_FEEDBACK',
+          label: '待处置反馈',
+          count: pendingFeedbackTasks.length,
+          icon: Car,
+          color: 'text-indigo-600 bg-indigo-50 border-indigo-200',
+          badgeColor: 'bg-indigo-600 text-white',
+          desc: '路面布控查扣，录入处罚决定书等要素佐证',
+        },
+        {
+          key: 'REJECTED_FIX',
+          label: '驳回待整改',
+          count: rejectedFixTasks.length,
+          icon: AlertTriangle,
+          color: 'text-rose-600 bg-rose-50 border-rose-200',
+          badgeColor: 'bg-rose-600 text-white',
+          desc: '审核未通过退回补充证据材料',
+        },
+      ];
+    } else if (currentRole.level === 'brigade') {
+      return [
+        {
+          key: 'BRIGADE_AUDIT',
+          label: '待大队初审',
+          count: brigadeAuditTasks.length,
+          icon: FileCheck,
+          color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+          badgeColor: 'bg-emerald-600 text-white',
+          desc: '核实下辖中队提交的处置凭证并审核上报支队',
+        },
+        {
+          key: 'PENDING_SIGN',
+          label: '待我签收',
+          count: pendingSignTasks.length,
+          icon: Clock,
+          color: 'text-blue-600 bg-blue-50 border-blue-200',
+          badgeColor: 'bg-blue-600 text-white',
+          desc: '支队直达大队或大队直办自查指令签收',
+        },
+        {
+          key: 'BRIGADE_DISPATCH_DOWN',
+          label: '待转派中队',
+          count: brigadeDispatchDownTasks.length,
+          icon: GitBranch,
+          color: 'text-amber-600 bg-amber-50 border-amber-200',
+          badgeColor: 'bg-amber-600 text-white',
+          desc: '已签收上级指令，待二次分派给下辖各中队执行',
+        },
+        {
+          key: 'RETURN_CONFIRM',
+          label: '错件退单审批',
+          count: pendingReturnConfirmTasks.length,
+          icon: RotateCcw,
+          color: 'text-rose-600 bg-rose-50 border-rose-200',
+          badgeColor: 'bg-rose-600 text-white',
+          desc: '中队申请退回修改的错件待大队指挥长核实确认',
+        },
+      ];
+    } else {
+      // branch (支队)
+      return [
+        {
+          key: 'BRANCH_AUDIT',
+          label: '待支队终审',
+          count: branchAuditTasks.length,
+          icon: Shield,
+          color: 'text-blue-600 bg-blue-50 border-blue-200',
+          badgeColor: 'bg-blue-600 text-white',
+          desc: '大队初审通过或自办反馈，终审通过后指令自动完结归档',
+        },
+        {
+          key: 'RETURN_CONFIRM',
+          label: '错件退单审批',
+          count: pendingReturnConfirmTasks.length,
+          icon: RotateCcw,
+          color: 'text-amber-600 bg-amber-50 border-amber-200',
+          badgeColor: 'bg-amber-600 text-white',
+          desc: '下级大队/中队申请退单待支队指挥长核准',
+        },
+        {
+          key: 'RETURNED_DRAFT',
+          label: '退单待更正重发',
+          count: returnedDraftTasks.length,
+          icon: AlertCircle,
+          color: 'text-rose-600 bg-rose-50 border-rose-200',
+          badgeColor: 'bg-rose-600 text-white',
+          desc: '已确认错派退回工单，更正目标责任单位后重新下发',
+        },
+      ];
+    }
+  }, [
+    currentRole.level,
+    pendingSignTasks.length,
+    pendingFeedbackTasks.length,
+    rejectedFixTasks.length,
+    brigadeAuditTasks.length,
+    brigadeDispatchDownTasks.length,
+    pendingReturnConfirmTasks.length,
+    branchAuditTasks.length,
+    returnedDraftTasks.length,
+  ]);
+
+  // 根据当前 activeTab 获取原始列表
+  const currentTabRawTasks = useMemo(() => {
+    switch (activeTab) {
+      case 'PENDING_SIGN':
+        return pendingSignTasks;
+      case 'PENDING_FEEDBACK':
+        return pendingFeedbackTasks;
+      case 'REJECTED_FIX':
+        return rejectedFixTasks;
+      case 'BRIGADE_AUDIT':
+        return brigadeAuditTasks;
+      case 'BRIGADE_DISPATCH_DOWN':
+        return brigadeDispatchDownTasks;
+      case 'RETURN_CONFIRM':
+        return pendingReturnConfirmTasks;
+      case 'BRANCH_AUDIT':
+        return branchAuditTasks;
+      case 'RETURNED_DRAFT':
+        return returnedDraftTasks;
+      default:
+        return pendingSignTasks;
+    }
+  }, [
+    activeTab,
+    pendingSignTasks,
+    pendingFeedbackTasks,
+    rejectedFixTasks,
+    brigadeAuditTasks,
+    brigadeDispatchDownTasks,
+    pendingReturnConfirmTasks,
+    branchAuditTasks,
+    returnedDraftTasks,
+  ]);
+
+  // 进行搜索与过滤
+  const filteredTasks = useMemo(() => {
+    return currentTabRawTasks.filter((task) => {
+      if (searchTerm.trim()) {
+        const query = searchTerm.toLowerCase();
+        const matchTaskNo = task.taskNo.toLowerCase().includes(query);
+        const matchTitle = task.title.toLowerCase().includes(query);
+        const matchPlate = task.vehicles.some((v) => v.plateNo.toLowerCase().includes(query));
+        if (!matchTaskNo && !matchTitle && !matchPlate) return false;
+      }
+      if (selectedCategory !== 'ALL' && task.category !== selectedCategory) {
+        return false;
+      }
+      if (selectedUrgency !== 'ALL' && task.urgency !== selectedUrgency) {
+        return false;
+      }
+      return true;
+    });
+  }, [currentTabRawTasks, searchTerm, selectedCategory, selectedUrgency]);
+
+  // 分页计算 (满足需求：每个页签下的待办列表记录都要有分页显示)
+  const totalTasks = filteredTasks.length;
+  const totalPages = Math.max(1, Math.ceil(totalTasks / pageSize));
+  const validPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (validPage - 1) * pageSize;
+  const paginatedTasks = useMemo(() => {
+    return filteredTasks.slice(startIndex, startIndex + pageSize);
+  }, [filteredTasks, startIndex, pageSize]);
+
+  // 快速签收
   const handleQuickSign = (task: DispatchTask, e: React.MouseEvent) => {
     e.stopPropagation();
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -216,7 +491,7 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     onUpdateTask(updatedTask);
   };
 
-  // 下级提交退回申请
+  // 提交退回申请（下级）
   const handleConfirmReturnRequest = () => {
     if (!returnDialogTask) return;
     const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -256,430 +531,344 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     setReturnDetail('');
   };
 
-  // 待办总数
-  const totalPendingCount = 
-    pendingSignTasks.length + 
-    pendingFeedbackTasks.length + 
-    pendingAuditTasks.length + 
-    pendingReturnConfirmTasks.length;
+  // 一键催办督办
+  const handleSuperviseTask = (task: DispatchTask, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const updatedTask: DispatchTask = {
+      ...task,
+      actionLogs: [
+        ...task.actionLogs,
+        {
+          id: `log-sup-${Date.now()}`,
+          timestamp: nowStr,
+          operatorName: currentRole.userName,
+          operatorUnit: currentRole.unitName,
+          action: '指挥催办督办',
+          details: `${currentRole.unitName} 指挥调度席发出限时加急催办督办通知，要求责任单位立即处置上报！`,
+        },
+      ],
+    };
+    onUpdateTask(updatedTask);
+    setSuperviseToast(`已向指令【${task.taskNo}】所有承办单位下发加急督办提醒！`);
+    setTimeout(() => setSuperviseToast(null), 3000);
+  };
+
+  // 计算当前角色全部待办总数
+  const totalRolePendingCount = roleTabs.reduce((acc, tab) => acc + tab.count, 0);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-5 space-y-4">
-      {/* 顶部身份与待办概览条 */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shrink-0">
-            <CheckSquare className="w-5 h-5" />
+    <div className="max-w-[1600px] mx-auto px-6 py-5 space-y-4">
+      {/* 督办提示轻提示 */}
+      {superviseToast && (
+        <div className="fixed top-16 right-6 z-50 bg-slate-900/90 text-white text-xs px-4 py-3 rounded-lg shadow-xl flex items-center space-x-2 border border-slate-700 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle className="w-4 h-4 text-emerald-400" />
+          <span>{superviseToast}</span>
+        </div>
+      )}
+
+      {/* 根据登录用户部门权限分别展示不同待办任务页签 (Requirement 二) */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        {/* 页签导航条 */}
+        <div className="flex border-b border-slate-200 bg-slate-50/70 overflow-x-auto">
+          {roleTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center space-x-2 px-5 py-3.5 text-xs font-bold transition border-b-2 whitespace-nowrap ${
+                  isActive
+                    ? 'border-blue-600 text-blue-700 bg-white shadow-2xs'
+                    : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[11px] px-2 py-0.2 rounded-full font-mono font-bold ${
+                    tab.count > 0 ? tab.badgeColor : 'bg-slate-200 text-slate-600'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 当前页签说明与搜索过滤区 */}
+        <div className="p-4 bg-slate-50/40 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+          <div className="text-slate-500">
+            {roleTabs.find((t) => t.key === activeTab)?.desc}
           </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h2 className="text-sm sm:text-base font-bold text-slate-900">交管指令 · 我的待办办理中心</h2>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
-                待办共 {totalPendingCount} 项
-              </span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 关键词搜索 */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="搜索单号、标题、车牌..."
+                className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
             </div>
-            <p className="text-xs text-slate-500">
-              当前执行席位：<strong className="text-slate-800">{currentRole.unitName}</strong> · 民警：{currentRole.userName} ({currentRole.policeNo})
-            </p>
+
+            {/* 业务类别筛选 */}
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+            >
+              <option value="ALL">全部业务类别</option>
+              <option value="车辆缉查">车辆缉查</option>
+              <option value="隐患治理">隐患治理</option>
+              <option value="违法查处">违法查处</option>
+              <option value="重点管控">重点管控</option>
+              <option value="专项整治">专项整治</option>
+            </select>
+
+            {/* 紧急程度筛选 */}
+            <select
+              value={selectedUrgency}
+              onChange={(e) => setSelectedUrgency(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none"
+            >
+              <option value="ALL">全部紧急程度</option>
+              <option value="特急">特急</option>
+              <option value="紧急">紧急</option>
+              <option value="常规">常规</option>
+            </select>
+
+            {(searchTerm || selectedCategory !== 'ALL' || selectedUrgency !== 'ALL') && (
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setSelectedCategory('ALL');
+                  setSelectedUrgency('ALL');
+                }}
+                className="text-slate-500 hover:text-slate-800 text-xs px-2 py-1 underline"
+              >
+                重置
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 shrink-0">
-          <button
-            onClick={onNavigateToManagement}
-            className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium"
-          >
-            <span>切换至指令管理综合台账</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* 快速分类导航卡片 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* 1. 待签收 */}
-        <button
-          onClick={() => setActiveCategory(activeCategory === 'SIGN' ? 'ALL' : 'SIGN')}
-          className={`p-3 rounded-lg border text-left transition relative ${
-            activeCategory === 'SIGN'
-              ? 'bg-blue-50 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600">待我签收</span>
-            <Clock className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-            {pendingSignTasks.length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">指令接收与倒计时启动</div>
-        </button>
-
-        {/* 2. 待反馈 */}
-        <button
-          onClick={() => setActiveCategory(activeCategory === 'FEEDBACK' ? 'ALL' : 'FEEDBACK')}
-          className={`p-3 rounded-lg border text-left transition relative ${
-            activeCategory === 'FEEDBACK'
-              ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600">待我反馈</span>
-            <Car className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-            {pendingFeedbackTasks.length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">路面查扣核实与要素录入</div>
-        </button>
-
-        {/* 3. 待审核 */}
-        <button
-          onClick={() => setActiveCategory(activeCategory === 'AUDIT' ? 'ALL' : 'AUDIT')}
-          className={`p-3 rounded-lg border text-left transition relative ${
-            activeCategory === 'AUDIT'
-              ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600">
-              {currentRole.level === 'branch' ? '待支队终审' : '待大队初审'}
-            </span>
-            <FileCheck className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-            {pendingAuditTasks.length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">处置证据与文书复核</div>
-        </button>
-
-        {/* 4. 待退单确认 */}
-        <button
-          onClick={() => setActiveCategory(activeCategory === 'RETURN' ? 'ALL' : 'RETURN')}
-          className={`p-3 rounded-lg border text-left transition relative ${
-            activeCategory === 'RETURN'
-              ? 'bg-amber-50 border-amber-500 ring-2 ring-amber-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-600">待处理退单申请</span>
-            <RotateCcw className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-slate-900 mt-1">
-            {pendingReturnConfirmTasks.length}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">派错协商与退回确认</div>
-        </button>
-      </div>
-
-      {/* 待办主列表 */}
-      <div className="space-y-3">
-        {totalPendingCount === 0 ? (
-          <div className="text-center py-16 bg-white rounded-lg border border-slate-200 text-slate-500 space-y-2 shadow-xs">
-            <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />
-            <div className="text-sm font-bold text-slate-800">当前没有待办事项</div>
-            <p className="text-xs text-slate-500">
-              当前登录席位的所有签收、反馈和审核任务均已按期处理完成。
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* 1. 待我签收区域 */}
-            {(activeCategory === 'ALL' || activeCategory === 'SIGN') && pendingSignTasks.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-blue-900">
-                    <Clock className="w-4 h-4 text-blue-600" />
-                    <span>待签收指令 ({pendingSignTasks.length})</span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">下级收到指令后需先完成签收，责任时限才正式生效</span>
-                </div>
-
-                {pendingSignTasks.map((task) => (
-                  <div
-                    key={`sign-${task.id}`}
-                    onClick={() => onSelectTask(task)}
-                    className="p-4 bg-white border border-blue-200 rounded-lg hover:border-blue-400 cursor-pointer shadow-xs transition space-y-2.5"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                          {task.taskNo}
-                        </span>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {task.category}
-                        </span>
-                        <span
-                          className={`text-xs font-semibold px-2 py-0.5 rounded border ${
-                            task.urgency === '特急'
-                              ? 'bg-rose-50 text-rose-700 border-rose-200'
-                              : task.urgency === '紧急'
-                              ? 'bg-orange-50 text-orange-700 border-orange-200'
-                              : 'bg-slate-100 text-slate-700 border-slate-200'
-                          }`}
-                        >
-                          {task.urgency}
-                        </span>
-                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          待您签收
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        下发时间：<span className="font-mono text-slate-700">{task.dispatchTime}</span> · 
-                        截止：<span className="font-mono text-rose-600 font-bold">{task.deadline}</span>
-                      </div>
-                    </div>
-
-                    <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
-
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      <span>目标车辆：</span>
-                      {task.vehicles.map((v) => (
-                        <span key={v.id} className="font-mono font-bold bg-slate-50 border px-1.5 py-0.5 rounded text-[11px]">
-                          {v.plateNo}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* 操作区 */}
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                      <span className="text-xs text-slate-500">
-                        发令单位：<strong>{task.creatorUnitName}</strong>
-                      </span>
-                      <div className="flex items-center space-x-2">
-                        {/* 派错申请退回 */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReturnDialogTask(task);
-                          }}
-                          className="px-2.5 py-1 text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 rounded border border-amber-200 transition"
-                        >
-                          派错退回
-                        </button>
-                        {/* 立即签收 */}
-                        <button
-                          type="button"
-                          onClick={(e) => handleQuickSign(task, e)}
-                          className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded shadow-xs transition active:scale-95 flex items-center space-x-1"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>立即签收</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+        {/* 待办任务清单列表 */}
+        <div className="p-4 space-y-3">
+          {filteredTasks.length === 0 ? (
+            <div className="text-center py-16 text-slate-400 space-y-2">
+              <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500" />
+              <div className="text-sm font-bold text-slate-800">
+                当前页签下没有待办任务
               </div>
-            )}
-
-            {/* 2. 待我反馈区域 */}
-            {(activeCategory === 'ALL' || activeCategory === 'FEEDBACK') && pendingFeedbackTasks.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-indigo-900">
-                    <Car className="w-4 h-4 text-indigo-600" />
-                    <span>待我处置反馈 ({pendingFeedbackTasks.length})</span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">已签收指令，需对每辆车进行路面布控核查并上传要素佐证</span>
-                </div>
-
-                {pendingFeedbackTasks.map((task) => (
-                  <div
-                    key={`feedback-${task.id}`}
-                    onClick={() => onSelectTask(task)}
-                    className="p-4 bg-white border border-indigo-200 rounded-lg hover:border-indigo-400 cursor-pointer shadow-xs transition space-y-2.5"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                          {task.taskNo}
-                        </span>
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {task.category}
-                        </span>
-                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                          待录入反馈
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        截止倒计时：<span className="font-mono text-amber-700 font-bold">{task.deadline}</span>
-                      </div>
-                    </div>
-
-                    <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
-
-                    {/* 车辆核查状态清单 */}
-                    <div className="space-y-1.5 bg-slate-50 p-2.5 rounded border border-slate-100 text-xs">
-                      {task.vehicles.map((v) => {
-                        const isIntercepted = v.isIntercepted;
-                        const isRejected = v.vehicleAuditStatus === 'REJECTED';
-                        return (
-                          <div key={v.id} className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              <span className="font-mono font-bold text-slate-900">{v.plateNo}</span>
-                              <span className="text-slate-500 text-[11px]">({v.plateType})</span>
-                              {isRejected && (
-                                <span className="text-rose-600 font-bold text-[10px] bg-rose-50 border border-rose-200 px-1 py-0.5 rounded">
-                                  审核驳回：{v.rejectReason || '证据材料不全，请重报'}
-                                </span>
-                              )}
-                            </div>
-                            <span className={`text-[11px] font-medium ${isIntercepted ? 'text-emerald-600 font-bold' : 'text-slate-500'}`}>
-                              {isIntercepted ? '✓ 已填报' : '● 待布控反馈'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                      <span className="text-xs text-slate-500">
-                        判定规则：【{task.completionRule === 'ANY_COMPLETE' ? '任一完成' : '全部完成'}】
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onSelectTask(task)}
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded shadow-xs transition active:scale-95 flex items-center space-x-1"
-                      >
-                        <Car className="w-3.5 h-3.5" />
-                        <span>去逐车反馈处置</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 3. 待我审核区域 */}
-            {(activeCategory === 'ALL' || activeCategory === 'AUDIT') && pendingAuditTasks.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-emerald-900">
-                    <FileCheck className="w-4 h-4 text-emerald-600" />
-                    <span>
-                      {currentRole.level === 'branch'
-                        ? `待支队终审 (${pendingAuditTasks.length})`
-                        : `待大队初审 (${pendingAuditTasks.length})`}
+              <p className="text-xs text-slate-500">
+                所有相关指令已按期响应或审批完成。
+              </p>
+            </div>
+          ) : (
+            paginatedTasks.map((task) => (
+              <div
+                key={`${activeTab}-${task.id}`}
+                onClick={() => onSelectTask(task)}
+                className="p-4 bg-white border border-slate-200 rounded-xl hover:border-blue-400 cursor-pointer shadow-xs transition hover:shadow-md space-y-3"
+              >
+                {/* 顶部状态与标签 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                      {task.taskNo}
                     </span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    {currentRole.level === 'branch'
-                      ? '大队初审通过后由支队做最终审批，终审通过自动计入完成'
-                      : '中队反馈后由大队进行初审，同意通过后自动上报支队'}
-                  </span>
-                </div>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                      {task.category}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                        task.urgency === '特急'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
+                          : task.urgency === '紧急'
+                          ? 'bg-orange-50 text-orange-700 border-orange-200'
+                          : 'bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {task.urgency}
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      规则：<strong>{task.completionRule === 'ANY_COMPLETE' ? '任一完成' : '全部完成'}</strong>
+                    </span>
 
-                {pendingAuditTasks.map((task) => (
-                  <div
-                    key={`audit-${task.id}`}
-                    onClick={() => onSelectTask(task)}
-                    className="p-4 bg-white border border-emerald-200 rounded-lg hover:border-emerald-400 cursor-pointer shadow-xs transition space-y-2.5"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                          {task.taskNo}
-                        </span>
-                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {currentRole.level === 'branch' ? '待支队终审' : '待大队初审'}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
-                        下发时间：{task.dispatchTime}
-                      </div>
-                    </div>
-
-                    <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
-
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                      <div className="text-xs text-slate-600">
-                        待审车辆数：<strong>{task.vehicles.filter((v) => v.vehicleAuditStatus === 'PENDING').length}</strong> 辆
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onSelectTask(task)}
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded shadow-xs transition active:scale-95 flex items-center space-x-1"
-                      >
-                        <FileCheck className="w-3.5 h-3.5" />
-                        <span>立即审核处置</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 4. 待处理退单申请区域 (上级审核) */}
-            {(activeCategory === 'ALL' || activeCategory === 'RETURN') && pendingReturnConfirmTasks.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center space-x-2 text-xs font-bold text-amber-900">
-                    <RotateCcw className="w-4 h-4 text-amber-600" />
-                    <span>待审批下级退单申请 ({pendingReturnConfirmTasks.length})</span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">下级签收后提出派发错误，上级确认同意后工单退回待发池</span>
-                </div>
-
-                {pendingReturnConfirmTasks.map((task) => (
-                  <div
-                    key={`ret-${task.id}`}
-                    onClick={() => onSelectTask(task)}
-                    className="p-4 bg-amber-50/50 border border-amber-300 rounded-lg shadow-xs transition space-y-2.5"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-xs font-bold text-blue-700 bg-white border px-2 py-0.5 rounded">
-                          {task.taskNo}
-                        </span>
-                        <span className="text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
-                          下级申请退回修改中
-                        </span>
-                      </div>
-                      <span className="font-mono text-[11px] text-slate-500">
-                        申请时间：{task.returnRequest?.requestedTime}
+                    {/* 驳回标记 */}
+                    {task.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED') && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-rose-600" />
+                        <span>审核被驳回待补正</span>
                       </span>
-                    </div>
-
-                    <h3 className="text-sm font-bold text-slate-900">{task.title}</h3>
-
-                    {task.returnRequest && (
-                      <div className="p-2.5 bg-white rounded border border-amber-200 text-xs text-amber-900 space-y-1">
-                        <div>
-                          申请单位：<strong>{task.returnRequest.requestedByUnitName}</strong> ({task.returnRequest.requestedByName})
-                        </div>
-                        <div>
-                          退回原因：<span className="font-medium text-amber-950">{task.returnRequest.reason}</span>
-                        </div>
-                      </div>
                     )}
 
-                    <div className="flex items-center justify-end space-x-2 pt-1 border-t border-amber-200">
-                      <button
-                        type="button"
-                        onClick={(e) => handleRejectReturn(task, e)}
-                        className="px-3 py-1.5 text-xs text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded"
-                      >
-                        驳回申请 (继续执行)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => handleApproveReturn(task, e)}
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded shadow-xs"
-                      >
-                        确认同意退回 (工单待更正)
-                      </button>
-                    </div>
+                    {/* 退回标记 */}
+                    {task.overallStatus === 'RETURNED_DRAFT' && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                        错派已退回 · 待更正重发
+                      </span>
+                    )}
                   </div>
-                ))}
+
+                  <div className="text-[11px] text-slate-500">
+                    下发时间：<span className="font-mono text-slate-700">{task.dispatchTime}</span> · 
+                    截止时限：<span className="font-mono text-rose-600 font-bold">{task.deadline}</span>
+                  </div>
+                </div>
+
+                {/* 标题 */}
+                <h3 className="text-sm font-bold text-slate-900 hover:text-blue-600 transition">
+                  {task.title}
+                </h3>
+
+                {/* 目标车辆清单 */}
+                <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                  <span className="text-slate-500 font-medium">涉及车辆 ({task.vehicles.length} 辆)：</span>
+                  {task.vehicles.map((v) => (
+                    <span
+                      key={v.id}
+                      className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
+                        v.vehicleAuditStatus === 'REJECTED'
+                          ? 'bg-rose-50 border-rose-300 text-rose-700'
+                          : v.isIntercepted
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                          : 'bg-white border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {v.plateNo}
+                      {v.vehicleAuditStatus === 'REJECTED' && ' (被驳回)'}
+                      {v.isIntercepted && v.vehicleAuditStatus !== 'REJECTED' && ' (已反馈)'}
+                    </span>
+                  ))}
+                </div>
+
+                {/* 退单信息展示 (若有) */}
+                {task.returnRequest && (
+                  <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-xs text-amber-900 space-y-1">
+                    <div className="font-semibold flex items-center gap-1.5 text-amber-800">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>下级提起退单申请</span>
+                    </div>
+                    <div>申请单位：<strong>{task.returnRequest.requestedByUnitName}</strong> ({task.returnRequest.requestedByName})</div>
+                    <div>退单原因：<span className="text-amber-950 font-medium">{task.returnRequest.reason}</span></div>
+                  </div>
+                )}
+
+                {/* 底部信息与动作按钮 */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <div className="text-xs text-slate-500">
+                    发令单位：<strong>{task.creatorUnitName}</strong> ({task.creatorName})
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {/* 中队/大队：错件退回 */}
+                    {activeTab === 'PENDING_SIGN' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReturnDialogTask(task);
+                        }}
+                        className="px-3 py-1.5 text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg border border-amber-200 transition font-medium"
+                      >
+                        派错申请退回
+                      </button>
+                    )}
+
+                    {/* 快速签收 */}
+                    {activeTab === 'PENDING_SIGN' && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleQuickSign(task, e)}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>立即签收</span>
+                      </button>
+                    )}
+
+                    {/* 去反馈 */}
+                    {(activeTab === 'PENDING_FEEDBACK' || activeTab === 'REJECTED_FIX') && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectTask(task)}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
+                      >
+                        <Car className="w-3.5 h-3.5" />
+                        <span>{activeTab === 'REJECTED_FIX' ? '补齐材料重报' : '逐车填报反馈'}</span>
+                      </button>
+                    )}
+
+                    {/* 大队初审 / 支队终审 */}
+                    {(activeTab === 'BRIGADE_AUDIT' || activeTab === 'BRANCH_AUDIT') && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectTask(task)}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
+                      >
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span>{activeTab === 'BRIGADE_AUDIT' ? '立即初审' : '立即终审归档'}</span>
+                      </button>
+                    )}
+
+                    {/* 审批退单 */}
+                    {activeTab === 'RETURN_CONFIRM' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => handleRejectReturn(task, e)}
+                          className="px-3 py-1.5 text-xs text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg"
+                        >
+                          驳回退回申请
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleApproveReturn(task, e)}
+                          className="px-4 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs"
+                        >
+                          同意退回 (更正重发)
+                        </button>
+                      </>
+                    )}
+
+                    {/* 更正重发 */}
+                    {activeTab === 'RETURNED_DRAFT' && (
+                      <button
+                        type="button"
+                        onClick={() => onSelectTask(task)}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center space-x-1"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>更正并重新下发</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
-          </>
+            ))
+          )}
+        </div>
+
+        {/* 分页组件 (满足需求：每个页签下的待办列表记录都要有分页显示) */}
+        {filteredTasks.length > 0 && (
+          <Pagination
+            total={totalTasks}
+            currentPage={validPage}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 30, 40, 50]}
+            onPageChange={(page) => setCurrentPage(page)}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+          />
         )}
       </div>
 

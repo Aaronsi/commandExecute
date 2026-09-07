@@ -1,11 +1,19 @@
 import React from 'react';
 import { 
-  CheckSquare, LayoutDashboard, Layers, FileText, AlertTriangle, 
-  BarChart3, BookOpen, ChevronLeft, ChevronRight, Shield,
+  Layers, LayoutDashboard, FileText, CheckSquare, AlertTriangle, 
+  BarChart3, Scale, BookOpen, ChevronLeft, ChevronRight, Shield,
   Radio, Wifi
 } from 'lucide-react';
 
-export type MainNavView = 'todo' | 'tasks' | 'branch_home' | 'warnings' | 'stats' | 'outline' | 'workbench';
+export type MainNavView = 
+  | 'branch_home' 
+  | 'workbench' 
+  | 'tasks' 
+  | 'todo' 
+  | 'warnings' 
+  | 'stats' 
+  | 'punish_stats' 
+  | 'outline';
 
 interface SidebarProps {
   activeView: MainNavView;
@@ -28,11 +36,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const menuItems = [
     {
-      id: 'todo' as MainNavView,
-      label: '我的待办',
-      icon: CheckSquare,
-      badge: todoCount > 0 ? String(todoCount) : null,
-      badgeColor: 'bg-amber-500 text-white font-bold',
+      id: 'branch_home' as MainNavView,
+      label: '支队首页',
+      icon: Layers,
+      badge: null,
+      isCurrentTag: true,
+    },
+    {
+      id: 'workbench' as MainNavView,
+      label: '工作台',
+      icon: LayoutDashboard,
+      badge: null,
     },
     {
       id: 'tasks' as MainNavView,
@@ -42,15 +56,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badgeColor: 'bg-slate-100 text-slate-600',
     },
     {
-      id: 'branch_home' as MainNavView,
-      label: '支队首页',
-      icon: Layers,
-      badge: null,
-      isCurrentTag: true,
+      id: 'todo' as MainNavView,
+      label: '我的待办',
+      icon: CheckSquare,
+      badge: todoCount > 0 ? String(todoCount) : null,
+      badgeColor: 'bg-amber-500 text-white font-bold',
     },
     {
       id: 'warnings' as MainNavView,
-      label: '指令异常预警',
+      label: '指令督办',
       icon: AlertTriangle,
       badge: warningCount > 0 ? String(warningCount) : null,
       badgeColor: 'bg-rose-500 text-white font-bold',
@@ -59,6 +73,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'stats' as MainNavView,
       label: '工作量统计',
       icon: BarChart3,
+      badge: null,
+    },
+    {
+      id: 'punish_stats' as MainNavView,
+      label: '违法处罚统计',
+      icon: Scale,
       badge: null,
     },
     {

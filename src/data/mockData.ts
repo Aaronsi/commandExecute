@@ -870,5 +870,480 @@ export const INITIAL_TASKS: DispatchTask[] = [
         details: '支队确认同意退回，工单返回初始待更正下发状态。'
       }
     ]
+  },
+  {
+    id: 'task-007',
+    taskNo: 'ZD-20260904-001',
+    title: '早高峰重点路口电动自行车违法集中查处指令',
+    category: '违法查处',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-04 07:00:00',
+    dispatchTime: '2026-09-04 07:10:00',
+    deadline: '2026-09-04 11:30:00',
+    urgency: '常规',
+    completionRule: 'ANY_COMPLETE',
+    content: '针对早高峰非机动车闯红灯、逆行、未佩戴头盔等违法行为开展现场联合执法与文书开具。',
+    targetArea: '市中心重点商圈与学校周边主要交叉路口',
+    vehicles: [
+      {
+        id: 'v-701',
+        plateNo: '浙A·E6682',
+        plateType: '普通摩托车',
+        riskReason: '多次逆行闯红灯未处理',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-701',
+        taskId: 'task-007',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-04 07:25:00',
+        signedBy: '李卫民',
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-702',
+        taskId: 'task-007',
+        parentId: 'node-701',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        status: 'SIGNED',
+        signedTime: '2026-09-04 07:30:00',
+        signedBy: '陈勇',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-701',
+        timestamp: '2026-09-04 07:10:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发给直属一大队。'
+      }
+    ]
+  },
+  {
+    id: 'task-008',
+    taskNo: 'ZD-20260904-002',
+    title: '高架快速路违规变道与实线压线车辆协查拦截',
+    category: '车辆缉查',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-04 08:30:00',
+    dispatchTime: '2026-09-04 08:40:00',
+    deadline: '2026-09-04 18:00:00',
+    urgency: '紧急',
+    completionRule: 'ALL_COMPLETE',
+    content: '监控发现该车多次在秋石高架桥恶意变道压实线引发追尾险情，立即布控查处。',
+    targetArea: '秋石高架南向北出口匝道',
+    vehicles: [
+      {
+        id: 'v-801',
+        plateNo: '浙A·559T2',
+        plateType: '小型汽车',
+        riskReason: '恶意变道且存在套牌嫌疑',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-01', 'brigade-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-801',
+        taskId: 'task-008',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-802',
+        taskId: 'task-008',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-801',
+        timestamp: '2026-09-04 08:40:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '联合下发给一大队、二大队'
+      }
+    ]
+  },
+  {
+    id: 'task-009',
+    taskNo: 'ZD-20260904-003',
+    title: '工业园区大型物流货运车辆超载漏撒专项整治',
+    category: '专项整治',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-02',
+    creatorUnitName: '直属二大队 (工业园区)',
+    creatorName: '赵建军 (大队长)',
+    createdAt: '2026-09-04 09:00:00',
+    dispatchTime: '2026-09-04 09:15:00',
+    deadline: '2026-09-04 22:00:00',
+    urgency: '常规',
+    completionRule: 'ANY_COMPLETE',
+    content: '联合路政部门在园区货运主通道设立固定与流动超载称重点，严查百吨王。',
+    targetArea: '物流港一号路与经二路交叉口',
+    vehicles: [
+      {
+        id: 'v-901',
+        plateNo: '鲁H·98822挂',
+        plateType: '挂车',
+        riskReason: '疑似超载 100% 以上',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-901',
+        taskId: 'task-009',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-04 09:20:00',
+        signedBy: '赵建军',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-901',
+        timestamp: '2026-09-04 09:15:00',
+        operatorName: '赵建军',
+        operatorUnit: '直属二大队',
+        action: '指令下发',
+        details: '大队自主发起专项整治指令'
+      }
+    ]
+  },
+  {
+    id: 'task-010',
+    taskNo: 'ZD-20260904-004',
+    title: '国省道沿线连续下坡事故多发路段警示与隐患排查',
+    category: '隐患治理',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-04 10:00:00',
+    dispatchTime: '2026-09-04 10:10:00',
+    deadline: '2026-09-05 18:00:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '对 104 国道临水临崖路段减速标线模糊、波形护栏受损情况进行现场摸排登记并出具整改建议书。',
+    targetArea: '104国道K122+500至K128+200处',
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-1001',
+        taskId: 'task-010',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-04 10:20:00',
+        signedBy: '李卫民',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1001',
+        timestamp: '2026-09-04 10:10:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发给直属一大队'
+      }
+    ]
+  },
+  {
+    id: 'task-011',
+    taskNo: 'ZD-20260904-005',
+    title: '涉毒失格人员仍驾驶营运客车跨辖区严控查扣',
+    category: '重点管控',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-04 11:00:00',
+    dispatchTime: '2026-09-04 11:15:00',
+    deadline: '2026-09-04 15:00:00',
+    urgency: '特急',
+    completionRule: 'ALL_COMPLETE',
+    content: '公安情报推送驾驶人周某因涉毒被注销机动车驾驶证，仍驾驶营运大巴从事长途客运，存在重特大公共安全隐患。',
+    targetArea: '东客运站出城口卡口',
+    vehicles: [
+      {
+        id: 'v-1101',
+        plateNo: '浙A·8899K',
+        plateType: '大型汽车',
+        riskReason: '失格驾驶人员上路',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-1101',
+        taskId: 'task-011',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1101',
+        timestamp: '2026-09-04 11:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '特急指令下发',
+        details: '特急红色指令下发至直属一大队'
+      }
+    ]
+  },
+  {
+    id: 'task-012',
+    taskNo: 'ZD-20260905-001',
+    title: '涉嫌假套牌玛莎拉蒂越野车卡口报警查缉指令',
+    category: '车辆缉查',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-05 09:30:00',
+    dispatchTime: '2026-09-05 09:45:00',
+    deadline: '2026-09-05 14:00:00',
+    urgency: '紧急',
+    completionRule: 'ALL_COMPLETE',
+    content: '卡口系统比对发现该车车牌登记车型与实际通过车型严重不符，请路面巡逻警力注意截停核验。',
+    targetArea: '滨江路沿线卡点',
+    vehicles: [
+      {
+        id: 'v-1201',
+        plateNo: '京A·88902',
+        plateType: '小型汽车',
+        riskReason: '车型库比对不一致，涉嫌套牌',
+        isIntercepted: true,
+        vehicleAuditStatus: 'PASSED',
+        interceptedTime: '2026-09-05 11:20:00',
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'COMPLETED',
+    executionNodes: [
+      {
+        id: 'node-1201',
+        taskId: 'task-012',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'AUDITED_PASS',
+        signedTime: '2026-09-05 09:50:00',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1201',
+        timestamp: '2026-09-05 09:45:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发给一大队铁骑中队'
+      },
+      {
+        id: 'log-1202',
+        timestamp: '2026-09-05 11:50:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '终审归档',
+        details: '文书录入合规，指令办结归档'
+      }
+    ]
+  },
+  {
+    id: 'task-013',
+    taskNo: 'ZD-20260905-002',
+    title: '涉嫌非法改装排气扰民“炸街车”夜间布控查处',
+    category: '专项整治',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-05 15:00:00',
+    dispatchTime: '2026-09-05 15:20:00',
+    deadline: '2026-09-05 23:59:00',
+    urgency: '常规',
+    completionRule: 'ANY_COMPLETE',
+    content: '市民热线多次投诉某改装轿车夜间在居民区周边大油门飙车扰民，请机动铁骑部署伏击查扣。',
+    targetArea: '文三路及学院路周边',
+    vehicles: [
+      {
+        id: 'v-1301',
+        plateNo: '浙A·998GT',
+        plateType: '小型汽车',
+        riskReason: '非法加装涡轮与直通排气管',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-1301',
+        taskId: 'task-013',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-05 15:30:00',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1301',
+        timestamp: '2026-09-05 15:20:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发一大队'
+      }
+    ]
+  },
+  {
+    id: 'task-014',
+    taskNo: 'ZD-20260906-001',
+    title: '雨雪恶劣天气高架桥梁结冰预警与管控指令',
+    category: '重点管控',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 06:00:00',
+    dispatchTime: '2026-09-06 06:10:00',
+    deadline: '2026-09-06 12:00:00',
+    urgency: '特急',
+    completionRule: 'ALL_COMPLETE',
+    content: '气象台发布寒潮大风黄色预警，气温骤降至零下，各高架桥梁风口易结冰，立即撒盐除冰并控制车速。',
+    targetArea: '全市各主干高架桥梁',
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01', 'brigade-02'],
+    overallStatus: 'COMPLETED',
+    executionNodes: [
+      {
+        id: 'node-1401',
+        taskId: 'task-014',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'AUDITED_PASS',
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-1402',
+        taskId: 'task-014',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'AUDITED_PASS',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1401',
+        timestamp: '2026-09-06 06:10:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '特急指令下发',
+        details: '全域撒盐除冰调度'
+      }
+    ]
+  },
+  {
+    id: 'task-015',
+    taskNo: 'ZD-20260906-002',
+    title: '外省注销重型半挂牵引车上路行驶协查',
+    category: '车辆缉查',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 14:00:00',
+    dispatchTime: '2026-09-06 14:15:00',
+    deadline: '2026-09-06 20:00:00',
+    urgency: '紧急',
+    completionRule: 'ALL_COMPLETE',
+    content: '公安部交管局下发报废及注销机动车清零专项名单，目标重型货车被系统识别进入开发区物流基地。',
+    targetArea: '经五路物流集散中心',
+    vehicles: [
+      {
+        id: 'v-1501',
+        plateNo: '鲁Q·67123',
+        plateType: '大型汽车',
+        riskReason: '已达到强制报废标准逾期未注销',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-1501',
+        taskId: 'task-015',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-06 14:25:00',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1501',
+        timestamp: '2026-09-06 14:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发直属二大队'
+      }
+    ]
   }
 ];
+

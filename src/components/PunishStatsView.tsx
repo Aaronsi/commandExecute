@@ -1,23 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  BarChart3, Download, Calendar, Filter, ChevronRight, 
-  ArrowLeft, Building2, CheckCircle2, Clock, AlertTriangle, 
-  RotateCcw, Shield, Layers, TrendingUp, Search, FileSpreadsheet,
-  FileCheck, AlertOctagon, Check
+  Scale, Download, Calendar, Filter, ChevronRight, 
+  ArrowLeft, Building2, CheckCircle2, AlertTriangle, 
+  Shield, Check, Search, BarChart3, AlertOctagon,
+  TrendingUp, Award, Car
 } from 'lucide-react';
-import { DispatchTask, UserRoleContext, TaskCategory, CompletionRule } from '../types';
+import { DispatchTask, UserRoleContext } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 
-interface StatsDashboardProps {
+interface PunishStatsViewProps {
   tasks: DispatchTask[];
   currentRole: UserRoleContext;
 }
 
 type TimeMode = 'DAY' | 'WEEK' | 'MONTH' | 'QUARTER' | 'YEAR';
 
-export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRole }) => {
+export const PunishStatsView: React.FC<PunishStatsViewProps> = ({ tasks, currentRole }) => {
   // 1. 统计条件状态
-  // 违法时间模式：日 / 周 / 月 / 季度 / 年度
   const [timeMode, setTimeMode] = useState<TimeMode>('DAY');
   const [dayStartDate, setDayStartDate] = useState('2026-09-01');
   const [dayEndDate, setDayEndDate] = useState('2026-09-07');
@@ -26,17 +25,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
   const [selectedQuarter, setSelectedQuarter] = useState('2026-Q3');
   const [selectedYear, setSelectedYear] = useState('2026');
 
-  // 业务类别筛选
-  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
-  // 紧急程度筛选
-  const [urgencyFilter, setUrgencyFilter] = useState<string>('ALL');
-  // 指令完成判定规则筛选
-  const [ruleFilter, setRuleFilter] = useState<string>('ALL');
+  // 违法行为筛选
+  const [selectedBehavior, setSelectedBehavior] = useState<string>('ALL');
 
-  // 下钻状态：支队账号可以下钻某个大队，查看其下属中队
+  // 下钻状态：支队账号下钻大队，查看下辖中队
   const [drillDownBrigadeId, setDrillDownBrigadeId] = useState<string | null>(null);
 
-  // 导出成功提示
+  // 导出提示
   const [exportToast, setExportToast] = useState(false);
   // 统计执行成功轻提示
   const [statsToast, setStatsToast] = useState(false);
@@ -45,19 +40,31 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
   const allBrigades = useMemo(() => MOCK_ORG_UNITS.filter((u) => u.level === 'brigade'), []);
   const allSquadrons = useMemo(() => MOCK_ORG_UNITS.filter((u) => u.level === 'squadron'), []);
 
+  // 统计执行触发
+  const handleExecuteStats = () => {
+    setStatsToast(true);
+    setTimeout(() => setStatsToast(false), 2500);
+  };
+
+  // 违法行为清单
+  const violationTypes = [
+    '假牌套牌',
+    '超速行驶',
+    '闯红灯',
+    '酒驾醉驾',
+    '危化品未按规定路线行驶',
+    '未按规定检验 (逾期未审)',
+    '逆向行驶',
+    '客车超员',
+  ];
+
   // 当前下钻的大队对象
   const activeDrillBrigade = useMemo(() => {
     if (!drillDownBrigadeId) return null;
     return allBrigades.find((b) => b.id === drillDownBrigadeId) || null;
   }, [drillDownBrigadeId, allBrigades]);
 
-  // 点击统计按钮触发即时统计计算并提供反馈
-  const handleExecuteStats = () => {
-    setStatsToast(true);
-    setTimeout(() => setStatsToast(false), 2500);
-  };
-
-  // 获取时间过滤文本描述
+  // 时间区间说明
   const timeFilterText = useMemo(() => {
     switch (timeMode) {
       case 'DAY':
@@ -75,128 +82,88 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
     }
   }, [timeMode, dayStartDate, dayEndDate, selectedWeek, selectedMonth, selectedQuarter, selectedYear]);
 
-  // 根据业务类别、紧急程度、完成判定规则过滤任务
-  const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
-      if (categoryFilter !== 'ALL' && t.category !== categoryFilter) return false;
-      if (urgencyFilter !== 'ALL' && t.urgency !== urgencyFilter) return false;
-      if (ruleFilter !== 'ALL' && t.completionRule !== ruleFilter) return false;
-      return true;
-    });
-  }, [tasks, categoryFilter, urgencyFilter, ruleFilter]);
-
-  // 辅助函数：根据部门 ID 生成该部门的统计指标
-  const calculateUnitMetrics = (unitId: string, unitName: string, isSquadron = false) => {
-    // 查找该部门负责的指令
-    const relevantTasks = filteredTasks.filter((t) => {
-      if (isSquadron) {
-        return t.executionNodes.some((n) => n.unitId === unitId);
-      } else {
-        // 大队
-        return (
-          t.targetBrigadeIds.includes(unitId) ||
-          t.creatorUnitId === unitId ||
-          t.executionNodes.some((n) => n.unitId === unitId || n.parentId === `node-${unitId}`)
-        );
-      }
-    });
-
-    // 基础基数模拟与真实计算结合，确保展示丰富逼真
+  // 根据部门和违法行为生成指标数据
+  const generateUnitViolationMetrics = (unitId: string, unitName: string, isSquadron = false) => {
     const seed = unitId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const baseMultiplier = isSquadron ? 1 : 4;
-    const taskCount = relevantTasks.length || (seed % 6 + 4) * baseMultiplier;
+    const multiplier = isSquadron ? 1 : 4.5;
 
-    const totalDispatched = Math.max(relevantTasks.length * baseMultiplier, taskCount);
-    const signedCount = Math.floor(totalDispatched * 0.94);
-    const unsignedCount = totalDispatched - signedCount;
-    const onTimeFeedbackCount = Math.floor(signedCount * 0.88);
-    const overdueFeedbackCount = signedCount - onTimeFeedbackCount;
-    const rejectedCount = (seed % 3) + 1;
-    const returnedCount = (seed % 2);
-    const completedTasks = relevantTasks.filter((t) => t.overallStatus === 'COMPLETED').length;
-    const actualCompleted = Math.max(completedTasks, Math.floor(totalDispatched * 0.85));
-    const completionRate = totalDispatched > 0 ? ((actualCompleted / totalDispatched) * 100).toFixed(1) + '%' : '100%';
+    // 若用户选择了具体违法行为，则只统计该项，否则统计汇总项
+    const activeBehaviorText = selectedBehavior === 'ALL' ? '全类违法综合查处' : selectedBehavior;
+
+    // 查处数 (拦截排查核实数)
+    const baseInvestigated = Math.round(((seed % 15) + 18) * multiplier);
+    // 处罚数 (开具处罚决定书、采取强制措施)
+    const penaltyRatio = 0.82 + ((seed % 12) * 0.012);
+    const penalizedCount = Math.round(baseInvestigated * Math.min(penaltyRatio, 0.96));
+    const penaltyRate = baseInvestigated > 0 ? ((penalizedCount / baseInvestigated) * 100).toFixed(1) + '%' : '100%';
 
     return {
       unitId,
       unitName,
-      totalDispatched,
-      signedCount,
-      unsignedCount,
-      onTimeFeedbackCount,
-      overdueFeedbackCount,
-      rejectedCount,
-      returnedCount,
-      completionRate,
-      rawCompletionRate: totalDispatched > 0 ? (actualCompleted / totalDispatched) * 100 : 100,
+      violationType: activeBehaviorText,
+      investigatedCount: baseInvestigated,
+      penalizedCount,
+      penaltyRate,
+      rawRate: (penalizedCount / baseInvestigated) * 100,
     };
   };
 
-  // 生成展示的数据行
+  // 表格展示数据行
   const tableRows = useMemo(() => {
-    // 场景 1：支队账号且正在下钻某个大队
+    // 支队下钻大队
     if (currentRole.level === 'branch' && drillDownBrigadeId) {
       const squadronsOfBrigade = allSquadrons.filter((s) => s.parentId === drillDownBrigadeId);
-      return squadronsOfBrigade.map((s) => calculateUnitMetrics(s.id, s.name, true));
+      return squadronsOfBrigade.map((s) => generateUnitViolationMetrics(s.id, s.name, true));
     }
 
-    // 场景 2：大队账号，直接统计其所属中队
+    // 大队账号直接统计辖区中队
     if (currentRole.level === 'brigade') {
       const mySquadrons = allSquadrons.filter((s) => s.parentId === currentRole.unitId);
-      return mySquadrons.map((s) => calculateUnitMetrics(s.id, s.name, true));
+      return mySquadrons.map((s) => generateUnitViolationMetrics(s.id, s.name, true));
     }
 
-    // 场景 3：中队账号，展示本中队及兄弟中队
+    // 中队账号
     if (currentRole.level === 'squadron') {
       const myUnit = MOCK_ORG_UNITS.find((u) => u.id === currentRole.unitId);
       const mySquadrons = allSquadrons.filter((s) => s.parentId === myUnit?.parentId);
-      return mySquadrons.map((s) => calculateUnitMetrics(s.id, s.name, true));
+      return mySquadrons.map((s) => generateUnitViolationMetrics(s.id, s.name, true));
     }
 
-    // 场景 4：支队账号默认展示各大队汇总数据
-    return allBrigades.map((b) => calculateUnitMetrics(b.id, b.name, false));
-  }, [currentRole.level, currentRole.unitId, drillDownBrigadeId, allBrigades, allSquadrons, filteredTasks]);
+    // 支队默认各大队数据
+    return allBrigades.map((b) => generateUnitViolationMetrics(b.id, b.name, false));
+  }, [currentRole.level, currentRole.unitId, drillDownBrigadeId, allBrigades, allSquadrons, selectedBehavior]);
 
-  // 全市支队合计总汇算
+  // 汇总行计算
   const summaryRow = useMemo(() => {
-    const totalDispatched = tableRows.reduce((acc, r) => acc + r.totalDispatched, 0);
-    const signedCount = tableRows.reduce((acc, r) => acc + r.signedCount, 0);
-    const unsignedCount = tableRows.reduce((acc, r) => acc + r.unsignedCount, 0);
-    const onTimeFeedbackCount = tableRows.reduce((acc, r) => acc + r.onTimeFeedbackCount, 0);
-    const overdueFeedbackCount = tableRows.reduce((acc, r) => acc + r.overdueFeedbackCount, 0);
-    const rejectedCount = tableRows.reduce((acc, r) => acc + r.rejectedCount, 0);
-    const returnedCount = tableRows.reduce((acc, r) => acc + r.returnedCount, 0);
-    const completionRate = totalDispatched > 0 ? ((signedCount * 0.89 / totalDispatched) * 100).toFixed(1) + '%' : '100%';
+    const totalInvestigated = tableRows.reduce((acc, r) => acc + r.investigatedCount, 0);
+    const totalPenalized = tableRows.reduce((acc, r) => acc + r.penalizedCount, 0);
+    const penaltyRate = totalInvestigated > 0 ? ((totalPenalized / totalInvestigated) * 100).toFixed(1) + '%' : '100%';
 
     return {
-      unitName: currentRole.level === 'branch' && !drillDownBrigadeId ? '全市交警大队数据总计' : '本责任辖区中队总计',
-      totalDispatched,
-      signedCount,
-      unsignedCount,
-      onTimeFeedbackCount,
-      overdueFeedbackCount,
-      rejectedCount,
-      returnedCount,
-      completionRate,
+      unitName: currentRole.level === 'branch' && !drillDownBrigadeId ? '全市各大队查处与处罚汇总' : '本责任辖区中队汇总',
+      violationType: selectedBehavior === 'ALL' ? '全部重点交通违法行为' : selectedBehavior,
+      investigatedCount: totalInvestigated,
+      penalizedCount: totalPenalized,
+      penaltyRate,
     };
-  }, [tableRows, currentRole.level, drillDownBrigadeId]);
+  }, [tableRows, currentRole.level, drillDownBrigadeId, selectedBehavior]);
 
-  // 一键导出 Excel 考核台账
+  // 导出 Excel
   const handleExportExcel = () => {
-    let csvContent = '\uFEFF'; // UTF-8 BOM
-    csvContent += '责任部门,工单总下发数,各级签收数,未签收数,按时反馈数,逾期反馈数,驳回整改数,错件退回数,办结率\n';
-    
+    let csvContent = '\uFEFF';
+    csvContent += '责任部门,违法行为类别,查处数(辆/起),处罚数(起),处罚率(%)\n';
+
     tableRows.forEach((row) => {
-      csvContent += `"${row.unitName}",${row.totalDispatched},${row.signedCount},${row.unsignedCount},${row.onTimeFeedbackCount},${row.overdueFeedbackCount},${row.rejectedCount},${row.returnedCount},"${row.completionRate}"\n`;
+      csvContent += `"${row.unitName}","${row.violationType}",${row.investigatedCount},${row.penalizedCount},"${row.penaltyRate}"\n`;
     });
 
-    csvContent += `"${summaryRow.unitName}",${summaryRow.totalDispatched},${summaryRow.signedCount},${summaryRow.unsignedCount},${summaryRow.onTimeFeedbackCount},${summaryRow.overdueFeedbackCount},${summaryRow.rejectedCount},${summaryRow.returnedCount},"${summaryRow.completionRate}"\n`;
+    csvContent += `"${summaryRow.unitName}","${summaryRow.violationType}",${summaryRow.investigatedCount},${summaryRow.penalizedCount},"${summaryRow.penaltyRate}"\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `交警指令闭环工作量绩效考核台账_${timeMode}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `重点交通违法查处与处罚效能考核台账_${timeMode}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -207,11 +174,11 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
 
   return (
     <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
-      {/* 导出成功轻提示 */}
+      {/* 导出轻提示 */}
       {exportToast && (
         <div className="fixed top-16 right-6 z-50 bg-slate-900 text-white text-xs px-4 py-3 rounded-lg shadow-xl flex items-center space-x-2 border border-slate-700 animate-in fade-in">
           <Check className="w-4 h-4 text-emerald-400" />
-          <span>Excel 考核台账已成功导出，已添加 UTF-8 BOM 兼容各版本办公软件！</span>
+          <span>违法处罚效能考核台账已成功导出！</span>
         </div>
       )}
 
@@ -219,13 +186,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
       {statsToast && (
         <div className="fixed top-16 right-6 z-50 bg-blue-900 text-white text-xs px-4 py-3 rounded-lg shadow-xl flex items-center space-x-2 border border-blue-700 animate-in fade-in">
           <Check className="w-4 h-4 text-blue-300" />
-          <span>已根据当前选择的违法时间与多维条件完成绩效指标重新统计！</span>
+          <span>已根据当前选择的违法时间与违法行为类型完成查处处罚效能重新统计！</span>
         </div>
       )}
 
-      {/* 统计条件筛选面板 (Requirement 四-1) */}
+      {/* 统计条件筛选栏 (Requirement 四-2) */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3.5">
-        {/* 时间模式切换 */}
+        {/* 时间维度切换 */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center space-x-2">
             <Calendar className="w-4 h-4 text-slate-500" />
@@ -257,11 +224,11 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
           </div>
 
           <div className="text-xs text-blue-700 font-mono font-medium">
-            当前统计区间：{timeFilterText}
+            统计区间：{timeFilterText}
           </div>
         </div>
 
-        {/* 动态时间输入控件 */}
+        {/* 动态时间输入及违法行为筛选 */}
         <div className="flex flex-wrap items-center gap-3 text-xs">
           {timeMode === 'DAY' && (
             <div className="flex items-center space-x-2">
@@ -293,7 +260,6 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
                 <option value="2026-W36">2026年 第36周 (08-31 ~ 09-06) [本周]</option>
                 <option value="2026-W35">2026年 第35周 (08-24 ~ 08-30)</option>
                 <option value="2026-W34">2026年 第34周 (08-17 ~ 08-23)</option>
-                <option value="2026-W33">2026年 第33周 (08-10 ~ 08-16)</option>
               </select>
             </div>
           )}
@@ -318,9 +284,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
                 onChange={(e) => setSelectedQuarter(e.target.value)}
                 className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
               >
-                <option value="2026-Q3">2026年 第三季度 (Q3: 07-01 ~ 09-30) [当前季度]</option>
+                <option value="2026-Q3">2026年 第三季度 (Q3: 07-01 ~ 09-30)</option>
                 <option value="2026-Q2">2026年 第二季度 (Q2: 04-01 ~ 06-30)</option>
-                <option value="2026-Q1">2026年 第一季度 (Q1: 01-01 ~ 03-31)</option>
               </select>
             </div>
           )}
@@ -335,57 +300,26 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
               >
                 <option value="2026">2026 年度</option>
                 <option value="2025">2025 年度</option>
-                <option value="2024">2024 年度</option>
               </select>
             </div>
           )}
 
           <div className="h-4 w-px bg-slate-200 hidden sm:block" />
 
-          {/* 指令业务类别 */}
+          {/* 违法行为筛选 */}
           <div className="flex items-center space-x-2">
-            <span className="text-slate-500">业务类别：</span>
+            <span className="text-slate-500 font-semibold">违法行为类型：</span>
             <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
+              value={selectedBehavior}
+              onChange={(e) => setSelectedBehavior(e.target.value)}
+              className="border border-slate-200 rounded px-2.5 py-1 text-xs font-semibold focus:outline-none bg-white text-slate-800"
             >
-              <option value="ALL">全部业务类别</option>
-              <option value="车辆缉查">车辆缉查</option>
-              <option value="隐患治理">隐患治理</option>
-              <option value="违法查处">违法查处</option>
-              <option value="重点管控">重点管控</option>
-              <option value="专项整治">专项整治</option>
-              <option value="其他">其他</option>
-            </select>
-          </div>
-
-          {/* 紧急程度 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-slate-500">紧急程度：</span>
-            <select
-              value={urgencyFilter}
-              onChange={(e) => setUrgencyFilter(e.target.value)}
-              className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
-            >
-              <option value="ALL">全部紧急程度</option>
-              <option value="特急">特急</option>
-              <option value="紧急">紧急</option>
-              <option value="常规">常规</option>
-            </select>
-          </div>
-
-          {/* 指令完成判定规则 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-slate-500">完成规则：</span>
-            <select
-              value={ruleFilter}
-              onChange={(e) => setRuleFilter(e.target.value)}
-              className="border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none"
-            >
-              <option value="ALL">全部规则</option>
-              <option value="ANY_COMPLETE">任一完成</option>
-              <option value="ALL_COMPLETE">全部完成</option>
+              <option value="ALL">全部重点违法行为</option>
+              {violationTypes.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -402,14 +336,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
         </div>
       </div>
 
-      {/* 考核结果指标表格与层级下钻 (Requirement 四-1) */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden space-y-0">
-        {/* 表格标题与下钻面包屑导航及导出按钮 */}
+      {/* 结果指标表格与层级下钻 (Requirement 四-2) */}
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+        {/* 表头与下钻指示及导出按钮 */}
         <div className="p-4 bg-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
             <Building2 className="w-4 h-4 text-blue-600" />
             <span className="text-xs font-bold text-slate-800">
-              考核结果指标台账明细
+              违法行为查处与处罚结果台账
             </span>
 
             {/* 下钻面包屑 */}
@@ -443,8 +377,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
 
             <span className="text-[11px] text-slate-400 hidden md:inline-block">
               {currentRole.level === 'branch' && !drillDownBrigadeId
-                ? '提示：点击大队名称可穿透查看下辖中队数据'
-                : '展示当前层级中队详细效能数据'}
+                ? '提示：点击大队行可下钻查看中队明细'
+                : '展示当前部门查处与处罚详情'}
             </span>
 
             {/* 导出 Excel 放置在列表标题最右边 */}
@@ -458,20 +392,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
           </div>
         </div>
 
-        {/* 统计指标数据表 */}
+        {/* 表格内容 */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
               <tr>
                 <th className="py-3 px-4">责任部门</th>
-                <th className="py-3 px-3 text-right">工单总下发数</th>
-                <th className="py-3 px-3 text-right">各级签收数</th>
-                <th className="py-3 px-3 text-right">未签收数</th>
-                <th className="py-3 px-3 text-right">按时反馈数</th>
-                <th className="py-3 px-3 text-right">逾期反馈数</th>
-                <th className="py-3 px-3 text-right">驳回整改数</th>
-                <th className="py-3 px-3 text-right">错件退回数</th>
-                <th className="py-3 px-3 text-right">办结率</th>
+                <th className="py-3 px-4">违法行为类别</th>
+                <th className="py-3 px-3 text-right">查处数 (起/辆)</th>
+                <th className="py-3 px-3 text-right">处罚数 (起)</th>
+                <th className="py-3 px-3 text-right">处罚率 (%)</th>
+                <th className="py-3 px-4 text-center">处置成效分析</th>
                 {currentRole.level === 'branch' && !drillDownBrigadeId && (
                   <th className="py-3 px-4 text-center">下钻操作</th>
                 )}
@@ -496,37 +427,32 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
                       </span>
                     )}
                   </td>
+                  <td className="py-3 px-4 text-slate-700 font-medium">
+                    <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 font-semibold">
+                      {row.violationType}
+                    </span>
+                  </td>
                   <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">
-                    {row.totalDispatched}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-blue-700 font-semibold">
-                    {row.signedCount}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <span className={row.unsignedCount > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}>
-                      {row.unsignedCount}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono text-emerald-700 font-semibold">
-                    {row.onTimeFeedbackCount}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <span className={row.overdueFeedbackCount > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}>
-                      {row.overdueFeedbackCount}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <span className={row.rejectedCount > 0 ? 'text-rose-700 font-bold' : 'text-slate-400'}>
-                      {row.rejectedCount}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono">
-                    <span className={row.returnedCount > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}>
-                      {row.returnedCount}
-                    </span>
+                    {row.investigatedCount}
                   </td>
                   <td className="py-3 px-3 text-right font-mono font-bold text-emerald-700">
-                    {row.completionRate}
+                    {row.penalizedCount}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-bold text-indigo-700 text-sm">
+                    {row.penaltyRate}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                        row.rawRate >= 90
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : row.rawRate >= 80
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      }`}
+                    >
+                      {row.rawRate >= 90 ? '精准查处 · 优秀' : row.rawRate >= 80 ? '正常达标' : '待强化核实'}
+                    </span>
                   </td>
                   {currentRole.level === 'branch' && !drillDownBrigadeId && (
                     <td className="py-3 px-4 text-center">
@@ -546,32 +472,23 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({ tasks, currentRo
                 </tr>
               ))}
 
-              {/* 汇总行 */}
+              {/* 汇总统计行 */}
               <tr className="bg-slate-50 font-bold border-t-2 border-slate-300">
                 <td className="py-3.5 px-4 text-slate-900">{summaryRow.unitName}</td>
+                <td className="py-3.5 px-4 text-slate-700">{summaryRow.violationType}</td>
                 <td className="py-3.5 px-3 text-right font-mono text-slate-900 font-bold">
-                  {summaryRow.totalDispatched}
+                  {summaryRow.investigatedCount}
                 </td>
-                <td className="py-3.5 px-3 text-right font-mono text-blue-700">
-                  {summaryRow.signedCount}
+                <td className="py-3.5 px-3 text-right font-mono text-emerald-700 font-bold">
+                  {summaryRow.penalizedCount}
                 </td>
-                <td className="py-3.5 px-3 text-right font-mono text-rose-600">
-                  {summaryRow.unsignedCount}
+                <td className="py-3.5 px-3 text-right font-mono text-indigo-700 font-bold text-sm">
+                  {summaryRow.penaltyRate}
                 </td>
-                <td className="py-3.5 px-3 text-right font-mono text-emerald-700">
-                  {summaryRow.onTimeFeedbackCount}
-                </td>
-                <td className="py-3.5 px-3 text-right font-mono text-amber-700">
-                  {summaryRow.overdueFeedbackCount}
-                </td>
-                <td className="py-3.5 px-3 text-right font-mono text-rose-700">
-                  {summaryRow.rejectedCount}
-                </td>
-                <td className="py-3.5 px-3 text-right font-mono text-amber-700">
-                  {summaryRow.returnedCount}
-                </td>
-                <td className="py-3.5 px-3 text-right font-mono text-emerald-700 font-bold text-sm">
-                  {summaryRow.completionRate}
+                <td className="py-3.5 px-4 text-center">
+                  <span className="text-[11px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+                    考核达标 (综合 {summaryRow.penaltyRate})
+                  </span>
                 </td>
                 {currentRole.level === 'branch' && !drillDownBrigadeId && <td />}
               </tr>

@@ -7,8 +7,6 @@ import {
 } from 'lucide-react';
 import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
-import { VehicleInterceptionDialog } from './VehicleInterceptionDialog';
-import { AuditDialog } from './AuditDialog';
 import { VehicleEvidenceModal } from './VehicleEvidenceModal';
 
 interface TaskDetailModalProps {
@@ -16,10 +14,10 @@ interface TaskDetailModalProps {
   onClose: () => void;
   task: DispatchTask;
   currentRole: UserRoleContext;
-  onUpdateTask: (updatedTask: DispatchTask) => void;
+  onUpdateTask?: (updatedTask: DispatchTask) => void;
 }
 
-type DetailTab = 'actions' | 'tracking' | 'vehicles' | 'document' | 'logs';
+type DetailTab = 'tracking' | 'vehicles' | 'document' | 'logs';
 
 export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   isOpen,
@@ -28,27 +26,11 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   currentRole,
   onUpdateTask,
 }) => {
-  // Default to actions (业务办理中心) so users immediately see their own tasks according to minimal action principle
-  const [activeTab, setActiveTab] = useState<DetailTab>('actions');
+  // Default to tracking (执行进度与流转跟踪)
+  const [activeTab, setActiveTab] = useState<DetailTab>('tracking');
 
   // Department filter for Vehicle Matrix tab (支队/大队多级部门筛选)
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('ALL');
-
-  // Modal sub-states
-  const [dispatchDownModalNode, setDispatchDownModalNode] = useState<TaskExecutionNode | null>(null);
-  const [selectedSquadronIds, setSelectedSquadronIds] = useState<string[]>([]);
-
-  // Interception dialog state
-  const [interceptionTarget, setInterceptionTarget] = useState<{
-    node: TaskExecutionNode;
-    vehicle: TaskVehicle;
-  } | null>(null);
-
-  // Audit dialog state
-  const [auditTarget, setAuditTarget] = useState<{
-    node: TaskExecutionNode;
-    vehicle: TaskVehicle;
-  } | null>(null);
 
   // Evidence preview modal state
   const [previewEvidenceVehicle, setPreviewEvidenceVehicle] = useState<TaskVehicle | null>(null);
@@ -95,384 +77,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const evalStatus = evaluateOverallCompletion(task);
-
-  // Identify nodes and vehicles requiring audit by current role
-  // 1. 大队初审清单: 下属中队已提交反馈，且未完成大队初审
-  const vehiclesNeedingBrigadeAudit = currentRole.level === 'brigade'
-    ? task.executionNodes
-        .filter((n) => n.unitLevel === 'squadron' && n.parentId === myNode?.id && n.status === 'FEEDBACK_SUBMITTED' && !n.brigadeAudit)
-        .flatMap((n) => {
-          return n.vehiclesStatus
-            .filter((vs) => vs.isIntercepted && vs.auditStatus === 'SUBMITTED')
-            .map((vs) => {
-              const fullVehicle = task.vehicles.find((v) => v.id === vs.vehicleId) || {
-                id: vs.vehicleId,
-                plateNo: vs.plateNo,
-                plateType: vs.plateType,
-                riskReason: '路面重点嫌疑查控',
-                isIntercepted: true,
-                disposalRecord: vs.disposalRecord,
-                feedbackRemarks: vs.feedbackRemarks,
-                evidenceImages: vs.evidenceImages,
-                vehicleAuditStatus: 'PENDING' as const,
-              };
-              return { node: n, vehicle: fullVehicle };
-            });
-        })
-    : [];
-
-  // 2. 支队终审清单: 大队初审通过的，或者大队自办反馈提交的车辆
-  const vehiclesNeedingBranchAudit = currentRole.level === 'branch'
-    ? task.executionNodes
-        .filter((n) => {
-          if (n.unitLevel === 'brigade' && n.status === 'FEEDBACK_SUBMITTED' && !n.branchAudit) return true;
-          if (n.unitLevel === 'squadron' && n.status === 'FEEDBACK_SUBMITTED' && n.brigadeAudit?.result === 'PASS' && !n.branchAudit) return true;
-          return false;
-        })
-        .flatMap((n) => {
-          return n.vehiclesStatus
-            .filter((vs) => vs.isIntercepted && (vs.auditStatus === 'PASSED' || vs.auditStatus === 'SUBMITTED'))
-            .map((vs) => {
-              const fullVehicle = task.vehicles.find((v) => v.id === vs.vehicleId) || {
-                id: vs.vehicleId,
-                plateNo: vs.plateNo,
-                plateType: vs.plateType,
-                riskReason: '支队重点车辆管控',
-                isIntercepted: true,
-                disposalRecord: vs.disposalRecord,
-                feedbackRemarks: vs.feedbackRemarks,
-                evidenceImages: vs.evidenceImages,
-                vehicleAuditStatus: 'BRIGADE_PASSED' as const,
-              };
-              return { node: n, vehicle: fullVehicle };
-            });
-        })
-    : [];
-
-  // Count pending actions for badge
-  const myPendingActionCount = useMemo(() => {
-    let count = 0;
-    if (myNode) {
-      if (myNode.status === 'PENDING_SIGN') count += 1;
-      if (myNode.unitLevel === 'squadron') {
-        // Squadron needs to feedback vehicles not intercepted or rejected
-        const pendingVehicles = task.vehicles.filter((v) => !v.isIntercepted || v.vehicleAuditStatus === 'REJECTED');
-        if (myNode.status === 'SIGNED' || myNode.status === 'REJECTED') {
-          count += pendingVehicles.length;
-        }
-      }
-      if (myNode.unitLevel === 'brigade') {
-        count += vehiclesNeedingBrigadeAudit.length;
-        if (myNode.status === 'SIGNED') count += 1; // Needs dispatch or self-handle
-      }
-    }
-    if (currentRole.level === 'branch') {
-      count += vehiclesNeedingBranchAudit.length;
-    }
-    return count;
-  }, [myNode, task.vehicles, vehiclesNeedingBrigadeAudit.length, vehiclesNeedingBranchAudit.length, currentRole.level]);
-
-  // Action: Sign In (签收)
-  const handleSignIn = (nodeId: string) => {
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const updatedNodes = task.executionNodes.map((n) => {
-      if (n.id === nodeId) {
-        return {
-          ...n,
-          status: 'SIGNED' as const,
-          signedTime: nowStr,
-          signedBy: currentRole.userName,
-        };
-      }
-      return n;
-    });
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      executionNodes: updatedNodes,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '指令签收确认',
-          details: `${currentRole.unitName} 已正式签收调度令，时限责任进入倒计时。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-  };
-
-  // Action: Dispatch Down from Brigade to Squadrons (大队转派下发中队)
-  const handleConfirmDispatchDown = () => {
-    if (!dispatchDownModalNode || selectedSquadronIds.length === 0) return;
-
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    // Create new squadron nodes
-    const newSquadronNodes: TaskExecutionNode[] = selectedSquadronIds.map((sqId) => {
-      const sqInfo = MOCK_ORG_UNITS.find((u) => u.id === sqId);
-      return {
-        id: `node-sq-${Date.now()}-${sqId}`,
-        taskId: task.id,
-        unitId: sqId,
-        unitName: sqInfo ? sqInfo.name : sqId,
-        unitLevel: 'squadron',
-        parentId: dispatchDownModalNode.id,
-        status: 'PENDING_SIGN',
-        vehiclesStatus: task.vehicles.map((v) => ({
-          vehicleId: v.id,
-          plateNo: v.plateNo,
-          plateType: v.plateType,
-          isIntercepted: false,
-          auditStatus: 'PENDING',
-        })),
-      };
-    });
-
-    // Update parent brigade node to DISPATCHED_DOWN
-    const updatedNodes = task.executionNodes.map((node) => {
-      if (node.id === dispatchDownModalNode.id) {
-        return {
-          ...node,
-          status: 'DISPATCHED_DOWN' as const,
-          dispatchedDownTime: nowStr,
-          dispatchedToSquadronIds: selectedSquadronIds,
-        };
-      }
-      return node;
-    });
-
-    const finalNodes = [...updatedNodes, ...newSquadronNodes];
-
-    const sqNames = selectedSquadronIds
-      .map((id) => MOCK_ORG_UNITS.find((u) => u.id === id)?.name || id)
-      .join('、');
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      executionNodes: finalNodes,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '转派下发下属中队',
-          details: `${dispatchDownModalNode.unitName} 将指令下派至：${sqNames}，要求限期路面查扣。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-    setDispatchDownModalNode(null);
-  };
-
-  // Action: Interception Feedback Submit (录入查扣与要素化反馈)
-  const handleInterceptionSubmit = (data: {
-    vehicleId: string;
-    plateNo: string;
-    plateType: PlateType;
-    disposalRecord: ThirdPartyDisposalRecord;
-    feedbackRemarks: string;
-    evidenceImages: string[];
-    dynamicFeedbackValues?: Record<string, any>;
-  }) => {
-    if (!interceptionTarget) return;
-
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const isSquadron = interceptionTarget.node.unitLevel === 'squadron';
-
-    // Update execution node status
-    const updatedNodes = task.executionNodes.map((node) => {
-      if (node.id === interceptionTarget.node.id) {
-        const updatedVehiclesStatus = node.vehiclesStatus.map((vs) => {
-          if (vs.vehicleId === data.vehicleId) {
-            return {
-              ...vs,
-              isIntercepted: true,
-              disposalRecord: data.disposalRecord,
-              feedbackRemarks: data.feedbackRemarks,
-              evidenceImages: data.evidenceImages,
-              auditStatus: 'SUBMITTED' as const,
-            };
-          }
-          return vs;
-        });
-
-        return {
-          ...node,
-          status: 'FEEDBACK_SUBMITTED' as const,
-          feedbackTime: nowStr,
-          feedbackBy: currentRole.userName,
-          feedbackSummary: `已拦截车辆【${data.plateNo} ${data.plateType}】，关联六合一文书号：${data.disposalRecord.punishmentCode}`,
-          vehiclesStatus: updatedVehiclesStatus,
-        };
-      }
-      return node;
-    });
-
-    // Update global vehicle status
-    const updatedVehicles = task.vehicles.map((v) => {
-      if (v.id === data.vehicleId) {
-        return {
-          ...v,
-          isIntercepted: true,
-          interceptedByUnitId: interceptionTarget.node.unitId,
-          interceptedByUnitName: interceptionTarget.node.unitName,
-          interceptedTime: data.disposalRecord.disposalTime,
-          disposalRecord: data.disposalRecord,
-          feedbackRemarks: data.feedbackRemarks,
-          evidenceImages: data.evidenceImages,
-          dynamicFeedbackValues: data.dynamicFeedbackValues,
-          // If squadron, waiting for brigade audit ('PENDING'); if brigade self-handled, waiting for branch audit ('BRIGADE_PASSED')
-          vehicleAuditStatus: isSquadron ? ('PENDING' as const) : ('BRIGADE_PASSED' as const),
-          rejectReason: undefined,
-        };
-      }
-      return v;
-    });
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      vehicles: updatedVehicles,
-      executionNodes: updatedNodes,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '路面拦截与反馈填报',
-          details: `${interceptionTarget.node.unitName} 成功查扣 ${data.plateNo} (${data.plateType})，综合应用平台文书号：${data.disposalRecord.punishmentCode}，已提交审核。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-    setInterceptionTarget(null);
-  };
-
-  // Action: Audit Submit (大队初审通过/驳回 或 支队终审通过/驳回)
-  const handleAuditSubmit = (auditResult: {
-    result: 'PASS' | 'REJECT';
-    remarks: string;
-    rejectReason?: string;
-  }) => {
-    if (!auditTarget) return;
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const isBranch = currentRole.level === 'branch';
-    const isBrigade = currentRole.level === 'brigade';
-
-    const updatedNodes = task.executionNodes.map((node) => {
-      if (node.id === auditTarget.node.id) {
-        let newStatus = node.status;
-        let brigadeAudit = node.brigadeAudit;
-        let branchAudit = node.branchAudit;
-
-        if (isBrigade) {
-          brigadeAudit = {
-            auditor: currentRole.userName,
-            auditTime: nowStr,
-            result: auditResult.result,
-            remarks: auditResult.remarks,
-          };
-          newStatus = auditResult.result === 'PASS' ? 'FEEDBACK_SUBMITTED' : 'REJECTED';
-        } else if (isBranch) {
-          branchAudit = {
-            auditor: currentRole.userName,
-            auditTime: nowStr,
-            result: auditResult.result,
-            remarks: auditResult.remarks,
-          };
-          newStatus = auditResult.result === 'PASS' ? 'AUDITED_PASS' : 'REJECTED';
-        }
-
-        const updatedVehiclesStatus = node.vehiclesStatus.map((vs) => {
-          if (vs.vehicleId === auditTarget.vehicle.id) {
-            return {
-              ...vs,
-              auditStatus: auditResult.result === 'PASS' ? ('PASSED' as const) : ('REJECTED' as const),
-              rejectReason: auditResult.rejectReason,
-            };
-          }
-          return vs;
-        });
-
-        return {
-          ...node,
-          status: newStatus,
-          brigadeAudit,
-          branchAudit,
-          vehiclesStatus: updatedVehiclesStatus,
-        };
-      }
-      return node;
-    });
-
-    // Update global vehicle audit status
-    const updatedVehicles = task.vehicles.map((v) => {
-      if (v.id === auditTarget.vehicle.id) {
-        let newVehicleAuditStatus: 'PENDING' | 'BRIGADE_PASSED' | 'PASSED' | 'REJECTED';
-        if (isBrigade) {
-          // If task was created by brigade, brigade is final authority -> PASSED
-          if (task.creatorLevel === 'brigade') {
-            newVehicleAuditStatus = auditResult.result === 'PASS' ? 'PASSED' : 'REJECTED';
-          } else {
-            // Task from branch -> brigade audit passed -> BRIGADE_PASSED
-            newVehicleAuditStatus = auditResult.result === 'PASS' ? 'BRIGADE_PASSED' : 'REJECTED';
-          }
-        } else {
-          // Branch audit is final
-          newVehicleAuditStatus = auditResult.result === 'PASS' ? 'PASSED' : 'REJECTED';
-        }
-
-        return {
-          ...v,
-          vehicleAuditStatus: newVehicleAuditStatus,
-          brigadeAuditRemarks: isBrigade ? auditResult.remarks : v.brigadeAuditRemarks,
-          branchAuditRemarks: isBranch ? auditResult.remarks : v.branchAuditRemarks,
-          rejectReason: auditResult.result === 'REJECT' ? auditResult.remarks : undefined,
-        };
-      }
-      return v;
-    });
-
-    let preliminaryTask: DispatchTask = {
-      ...task,
-      vehicles: updatedVehicles,
-      executionNodes: updatedNodes,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: isBranch
-            ? auditResult.result === 'PASS' ? '支队终审通过' : '支队终审驳回'
-            : auditResult.result === 'PASS' ? '大队初审通过' : '大队初审驳回',
-          details: `对 ${auditTarget.node.unitName} 提交的车辆【${auditTarget.vehicle.plateNo}】进行核验。审核意见：${auditResult.remarks}`,
-        },
-      ],
-    };
-
-    // Re-evaluate overall task completion against final approved vehicles count
-    const evaluation = evaluateOverallCompletion(preliminaryTask);
-    if (evaluation.isCompleted) {
-      preliminaryTask.overallStatus = 'COMPLETED';
-      preliminaryTask.completedTime = nowStr;
-      preliminaryTask.completionSummary = evaluation.summary;
-    }
-
-    onUpdateTask(preliminaryTask);
-    setAuditTarget(null);
-  };
 
   // Group brigade and squadron nodes for topology view
   const brigadeNodes = task.executionNodes.filter((n) => n.unitLevel === 'brigade');
@@ -650,44 +254,23 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         <div className="px-6 py-2.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-slate-50 border-b border-indigo-100 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5">
             <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-            <span className="text-xs font-bold text-slate-900">当前操作席位：{currentRole.unitName}</span>
+            <span className="text-xs font-bold text-slate-900">当前查看席位：{currentRole.unitName}</span>
             <span className="text-[11px] text-slate-500 font-mono">({currentRole.userName})</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-white border border-slate-200 text-blue-700 shadow-2xs">
-              {currentRole.level === 'branch' ? '市支队审批监管' : currentRole.level === 'brigade' ? '大队指挥长' : '基层执勤中队'}
+              {currentRole.level === 'branch' ? '市支队全域监管' : currentRole.level === 'brigade' ? '大队指挥长' : '基层执勤中队'}
             </span>
           </div>
 
-          <div className="text-xs text-slate-600 flex items-center space-x-2">
-            <span>待本席位处置事项：</span>
-            <span className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
-              myPendingActionCount > 0 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {myPendingActionCount} 项
-            </span>
+          <div className="text-xs text-slate-500 flex items-center space-x-1.5">
+            <span>台账综合详情模式（如需签收、反馈或审核处置，请前往</span>
+            <strong className="text-blue-700">「我的待办」</strong>
+            <span>专区）</span>
           </div>
         </div>
 
-        {/* 5 Distinct Clean Tabs */}
+        {/* 4 Distinct Clean Tabs */}
         <div className="flex items-center space-x-2 px-6 pt-2.5 border-b border-slate-200 bg-white shrink-0">
-          {/* TAB 1: ACTIONS (业务办理中心 - 纯操作) */}
-          <button
-            onClick={() => setActiveTab('actions')}
-            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
-              activeTab === 'actions'
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <CheckSquare className="w-3.5 h-3.5" />
-            <span>我的待办与业务处置</span>
-            {myPendingActionCount > 0 && (
-              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">
-                {myPendingActionCount}
-              </span>
-            )}
-          </button>
-
-          {/* TAB 2: TRACKING (执行跟踪与拓扑 - 纯查看) */}
+          {/* TAB 1: TRACKING (执行跟踪与拓扑 - 纯查看) */}
           <button
             onClick={() => setActiveTab('tracking')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
@@ -700,7 +283,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <span>执行进度与流转跟踪</span>
           </button>
 
-          {/* TAB 3: VEHICLE MATRIX (目标车辆拦截总表 - 含部门筛选) */}
+          {/* TAB 2: VEHICLE MATRIX (目标车辆拦截总表 - 含部门筛选) */}
           <button
             onClick={() => setActiveTab('vehicles')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
@@ -713,7 +296,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <span>目标车辆处置总表 ({task.vehicles.length})</span>
           </button>
 
-          {/* TAB 4: OFFICIAL DOCUMENT */}
+          {/* TAB 3: OFFICIAL DOCUMENT */}
           <button
             onClick={() => setActiveTab('document')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
@@ -726,7 +309,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <span>交管红头督办单</span>
           </button>
 
-          {/* TAB 5: ACTION LOGS */}
+          {/* TAB 4: ACTION LOGS */}
           <button
             onClick={() => setActiveTab('logs')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
@@ -1629,100 +1212,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Sub-modal: Brigade dispatch down to squadrons */}
-      {dispatchDownModalNode && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md p-5 space-y-4 shadow-xl">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Send className="w-4 h-4 text-blue-600" />
-              <span>转派下发至下属执勤中队</span>
-            </h3>
-            <p className="text-xs text-slate-500">
-              负责大队：{dispatchDownModalNode.unitName}
-            </p>
-
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {MOCK_ORG_UNITS.filter((u) => u.parentId === dispatchDownModalNode.unitId).map((sq) => {
-                const checked = selectedSquadronIds.includes(sq.id);
-                return (
-                  <div
-                    key={sq.id}
-                    onClick={() => {
-                      if (checked) {
-                        setSelectedSquadronIds(selectedSquadronIds.filter((id) => id !== sq.id));
-                      } else {
-                        setSelectedSquadronIds([...selectedSquadronIds, sq.id]);
-                      }
-                    }}
-                    className={`p-2.5 rounded-lg border text-xs cursor-pointer flex items-center justify-between transition ${
-                      checked
-                        ? 'bg-blue-50 border-blue-400 text-blue-900 ring-1 ring-blue-400/20'
-                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className="font-medium">{sq.name}</span>
-                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                      checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
-                    }`}>
-                      {checked && <CheckCircle2 className="w-3.5 h-3.5" />}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200">
-              <button
-                onClick={() => setDispatchDownModalNode(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 border border-slate-200 bg-white shadow-xs"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleConfirmDispatchDown}
-                disabled={selectedSquadronIds.length === 0}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-40"
-              >
-                确认下发 ({selectedSquadronIds.length} 个中队)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Sub-modal: Road Interception with 3rd-party query */}
-      {interceptionTarget && (
-        <VehicleInterceptionDialog
-          isOpen={true}
-          onClose={() => setInterceptionTarget(null)}
-          vehicle={{
-            vehicleId: interceptionTarget.vehicle.id,
-            plateNo: interceptionTarget.vehicle.plateNo,
-            plateType: interceptionTarget.vehicle.plateType,
-            riskReason: interceptionTarget.vehicle.riskReason,
-          }}
-          taskDispatchTime={task.dispatchTime}
-          taskCategory={task.category}
-          feedbackElements={task.feedbackElements}
-          currentRole={currentRole}
-          onSubmitFeedback={handleInterceptionSubmit}
-        />
-      )}
-
-      {/* Sub-modal: Audit & Reject dialog */}
-      {auditTarget && (
-        <AuditDialog
-          isOpen={true}
-          onClose={() => setAuditTarget(null)}
-          nodeId={auditTarget.node.id}
-          unitName={auditTarget.node.unitName}
-          vehicle={auditTarget.vehicle}
-          taskDispatchTime={task.dispatchTime}
-          currentRole={currentRole}
-          onAuditSubmit={handleAuditSubmit}
-        />
-      )}
 
       {/* Sub-modal: Vehicle Evidence & Case file preview */}
       {previewEvidenceVehicle && (
