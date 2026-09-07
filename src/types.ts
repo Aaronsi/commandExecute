@@ -30,7 +30,9 @@ export type NodeStatus =
   | 'FEEDBACK_SUBMITTED' // 已提交反馈(待审)
   | 'REJECTED'         // 已驳回(待再次反馈)
   | 'AUDITED_PASS'     // 审核通过(已完结)
-  | 'OVERALL_COMPLETED';// 整体已完结
+  | 'OVERALL_COMPLETED'// 整体已完结
+  | 'RETURN_PENDING'   // 申请退回修改中
+  | 'CANCELLED';       // 已作废/撤销
 
 export interface ThirdPartyDisposalRecord {
   recordId: string;
@@ -182,11 +184,33 @@ export interface DispatchTask {
   // 执行拓扑节点
   executionNodes: TaskExecutionNode[];
   
-  // 全局指令状态
-  overallStatus: 'PROCESSING' | 'COMPLETED' | 'OVERDUE';
+  // 全局指令状态: PROCESSING 流转中 | COMPLETED 已完结 | OVERDUE 超时 | CANCELLED_ERROR 派件错误-已撤销 | RETURNED_DRAFT 已退回待更正
+  overallStatus: 'PROCESSING' | 'COMPLETED' | 'OVERDUE' | 'CANCELLED_ERROR' | 'RETURNED_DRAFT';
   completedTime?: string;
   completionSummary?: string;
-  
+
+  // 错件撤销存证记录 (未签收撤销)
+  cancelRecord?: {
+    cancelledByUnitId: string;
+    cancelledByUnitName: string;
+    cancelledByName: string;
+    cancelledTime: string;
+    reason: string;
+  };
+
+  // 退回修改协商记录 (已签收退回)
+  returnRequest?: {
+    requestedByUnitId: string;
+    requestedByUnitName: string;
+    requestedByName: string;
+    requestedTime: string;
+    reason: string;
+    status: 'PENDING_CONFIRM' | 'CONFIRMED' | 'REJECTED';
+    confirmedBy?: string;
+    confirmedTime?: string;
+    confirmRemarks?: string;
+  };
+
   // 历史流转日志
   actionLogs: {
     id: string;

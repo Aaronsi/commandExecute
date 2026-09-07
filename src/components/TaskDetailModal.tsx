@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   X, Shield, Clock, AlertTriangle, CheckCircle2, XCircle, 
   GitBranch, Send, ArrowRight, UserCheck, Search, Car, FileText, CheckSquare, Layers,
-  Paperclip, Download, Tag, FileCheck, ExternalLink, Printer, Stamp, Filter, RefreshCw, Eye, Building2
+  Paperclip, Download, Tag, FileCheck, ExternalLink, Printer, Stamp, Filter, RefreshCw, Eye, Building2,
+  RotateCcw
 } from 'lucide-react';
 import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
@@ -583,7 +584,17 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <span>{task.completionRule === 'ANY_COMPLETE' ? '任一完成模式' : '全部完成模式'}</span>
               </span>
 
-              {task.overallStatus === 'COMPLETED' ? (
+              {task.overallStatus === 'CANCELLED_ERROR' ? (
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
+                  <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>派件错误 · 已撤销（不计入考核）</span>
+                </span>
+              ) : task.overallStatus === 'RETURNED_DRAFT' ? (
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                  <span>已退回 · 待更正重发</span>
+                </span>
+              ) : task.overallStatus === 'COMPLETED' ? (
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                   <span>全单已完结归档</span>

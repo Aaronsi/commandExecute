@@ -1,17 +1,18 @@
 import React from 'react';
 import { 
-  LayoutDashboard, Layers, FileText, AlertTriangle, 
+  CheckSquare, LayoutDashboard, Layers, FileText, AlertTriangle, 
   BarChart3, BookOpen, ChevronLeft, ChevronRight, Shield,
   Radio, Wifi
 } from 'lucide-react';
 
-export type MainNavView = 'workbench' | 'branch_home' | 'tasks' | 'warnings' | 'stats' | 'outline';
+export type MainNavView = 'todo' | 'tasks' | 'branch_home' | 'warnings' | 'stats' | 'outline' | 'workbench';
 
 interface SidebarProps {
   activeView: MainNavView;
   onViewChange: (view: MainNavView) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  todoCount?: number;
   taskCount?: number;
   warningCount?: number;
 }
@@ -21,22 +22,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onViewChange,
   isCollapsed,
   onToggleCollapse,
+  todoCount = 0,
   taskCount = 12,
   warningCount = 5,
 }) => {
   const menuItems = [
     {
-      id: 'workbench' as MainNavView,
-      label: '工作台',
-      icon: LayoutDashboard,
-      badge: null,
-    },
-    {
-      id: 'branch_home' as MainNavView,
-      label: '支队首页',
-      icon: Layers,
-      badge: null,
-      isCurrentTag: true,
+      id: 'todo' as MainNavView,
+      label: '我的待办',
+      icon: CheckSquare,
+      badge: todoCount > 0 ? String(todoCount) : null,
+      badgeColor: 'bg-amber-500 text-white font-bold',
     },
     {
       id: 'tasks' as MainNavView,
@@ -44,6 +40,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: FileText,
       badge: taskCount > 0 ? String(taskCount) : null,
       badgeColor: 'bg-slate-100 text-slate-600',
+    },
+    {
+      id: 'branch_home' as MainNavView,
+      label: '支队首页',
+      icon: Layers,
+      badge: null,
+      isCurrentTag: true,
     },
     {
       id: 'warnings' as MainNavView,

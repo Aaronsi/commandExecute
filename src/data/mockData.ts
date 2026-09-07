@@ -635,5 +635,240 @@ export const INITIAL_TASKS: DispatchTask[] = [
         details: '直属一大队自发指令下达至城东一中队、城西二中队，要求限时完成拦截。',
       }
     ]
+  },
+  {
+    id: 'task-004',
+    taskNo: 'ZD-20260903-018',
+    title: '【涉案嫌疑】号牌录入存疑重点机动车排查（下级已提退回修改申请）',
+    category: '重点管控',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-03 10:00:00',
+    dispatchTime: '2026-09-03 10:05:00',
+    deadline: '2026-09-03 18:00:00',
+    urgency: '紧急',
+    completionRule: 'ANY_COMPLETE',
+    content: '收到市局反诈中心通报，重点机动车【浙A55829】疑似跨辖区涉案，请直属一大队及下辖城东一中队迅速拦截。',
+    targetArea: '环城北路、莫干山路沿线',
+    feedbackElements: [
+      { key: 'third_party_doc', name: '六合一/综合应用平台处置凭证号', enabled: true, required: true, type: 'third_party_doc' },
+      { key: 'punish_result', name: '处置强制措施', enabled: true, required: true, type: 'select', options: ['现场处罚', '扣留机动车', '移交办案'] },
+      { key: 'location', name: '拦截执勤卡点', enabled: true, required: true, type: 'text' },
+      { key: 'site_photo', name: '查验核实照片', enabled: true, required: true, type: 'image' }
+    ],
+    vehicles: [
+      {
+        id: 'v-401',
+        plateNo: '浙A55829',
+        plateType: '小型汽车',
+        ownerName: '周*良',
+        vehicleModel: '奥迪A6L 黑色',
+        riskReason: '反诈专班关联嫌疑车辆',
+        isIntercepted: false,
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    returnRequest: {
+      requestedByUnitId: 'squadron-01-01',
+      requestedByUnitName: '一大队·城东一中队',
+      requestedByName: '陈勇 (034981)',
+      requestedTime: '2026-09-03 10:25:30',
+      reason: '【非本辖区/车辆已驶离】卡口高清抓拍证实该车已于09:40由中河高架南向北驶入直属三大队辖区，且下发登记的号牌疑似与反诈通报最后一位字母不符，申请退回修改并重新更正派发。',
+      status: 'PENDING_CONFIRM'
+    },
+    executionNodes: [
+      {
+        id: 'node-b401',
+        taskId: 'task-004',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'DISPATCHED_DOWN',
+        signedTime: '2026-09-03 10:10:00',
+        signedBy: '李卫民',
+        dispatchedDownTime: '2026-09-03 10:12:00',
+        dispatchedToSquadronIds: ['squadron-01-01'],
+        vehiclesStatus: []
+      },
+      {
+        id: 'node-s401',
+        taskId: 'task-004',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'node-b401',
+        status: 'RETURN_PENDING',
+        signedTime: '2026-09-03 10:15:00',
+        signedBy: '陈勇',
+        vehiclesStatus: [
+          {
+            vehicleId: 'v-401',
+            plateNo: '浙A55829',
+            plateType: '小型汽车',
+            isIntercepted: false,
+            auditStatus: 'PENDING'
+          }
+        ]
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-401',
+        timestamp: '2026-09-03 10:05:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '支队向直属一大队下发【浙A55829】拦截指令。'
+      },
+      {
+        id: 'log-402',
+        timestamp: '2026-09-03 10:15:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '节点签收',
+        details: '城东一中队执勤民警签收指令。'
+      },
+      {
+        id: 'log-403',
+        timestamp: '2026-09-03 10:25:30',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '提起退回修改申请',
+        details: '下级提出退单协商：车辆已驶离本辖区，号牌可能存在录入偏差，申请退回修改。'
+      }
+    ]
+  },
+  {
+    id: 'task-005',
+    taskNo: 'ZD-20260902-009',
+    title: '【错件撤销存证】原派发直属二大队危化品未报备排查指令（已作废）',
+    category: '重点管控',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-02 11:00:00',
+    dispatchTime: '2026-09-02 11:05:00',
+    deadline: '2026-09-02 16:00:00',
+    urgency: '特急',
+    completionRule: 'ANY_COMPLETE',
+    content: '危化品运输车排查（因派发责任大队选错，且下级未签收，支队已按规定执行错件撤销，工单作废不计考核）。',
+    targetArea: '临空物流园区',
+    vehicles: [
+      {
+        id: 'v-501',
+        plateNo: '浙B88910',
+        plateType: '大型汽车',
+        riskReason: '危化品罐车误派',
+        isIntercepted: false
+      }
+    ],
+    targetBrigadeIds: ['brigade-02'],
+    overallStatus: 'CANCELLED_ERROR',
+    cancelRecord: {
+      cancelledByUnitId: 'branch-01',
+      cancelledByUnitName: '市交警支队指挥中心',
+      cancelledByName: '张志刚 (030001)',
+      cancelledTime: '2026-09-02 11:15:00',
+      reason: '【派发单位错误】该危化品车辆实际申报路线位于跨区高速公路，误选为直属二大队。在下级未签收状态下执行错件撤销作废。'
+    },
+    executionNodes: [
+      {
+        id: 'node-b501',
+        taskId: 'task-005',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'CANCELLED',
+        vehiclesStatus: []
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-501',
+        timestamp: '2026-09-02 11:05:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '支队指挥中心误下发至直属二大队。'
+      },
+      {
+        id: 'log-502',
+        timestamp: '2026-09-02 11:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '错件撤销（未签收）',
+        details: '在下级直属二大队未签收状态下发起错件撤销，工单标记【派件错误 - 已撤销】，剔除有效考核基数。'
+      }
+    ]
+  },
+  {
+    id: 'task-006',
+    taskNo: 'ZD-20260903-022',
+    title: '【已退回待更正】校车未年检上路排查指令（上级已确认退回·待修改重发）',
+    category: '隐患治理',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-03 08:30:00',
+    dispatchTime: '2026-09-03 08:35:00',
+    deadline: '2026-09-03 17:00:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '原指令排查校车【浙A1102校】，经直属一大队核实该车所属校区已搬迁至二大队辖区，已协商退回，现处于待更正重发草稿状态。',
+    targetArea: '开发区各中小学周边道路',
+    vehicles: [
+      {
+        id: 'v-601',
+        plateNo: '浙A1102校',
+        plateType: '大型汽车',
+        riskReason: '校车逾期未检验',
+        isIntercepted: false
+      }
+    ],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'RETURNED_DRAFT',
+    returnRequest: {
+      requestedByUnitId: 'brigade-01',
+      requestedByUnitName: '直属一大队 (市中心城区)',
+      requestedByName: '李卫民 (031001)',
+      requestedTime: '2026-09-03 09:00:00',
+      reason: '校区已于上月搬迁至二大队辖区，责任单位应变更为直属二大队。',
+      status: 'CONFIRMED',
+      confirmedBy: '张志刚 (030001)',
+      confirmedTime: '2026-09-03 09:15:00',
+      confirmRemarks: '同意退回，待指挥中心更正目标大队后重新下发。'
+    },
+    executionNodes: [],
+    actionLogs: [
+      {
+        id: 'log-601',
+        timestamp: '2026-09-03 08:35:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '指令下发',
+        details: '下发给直属一大队。'
+      },
+      {
+        id: 'log-602',
+        timestamp: '2026-09-03 09:00:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '申请退回修改',
+        details: '大队已签收但未核查，提出责任校区已搬迁，申请退回修改。'
+      },
+      {
+        id: 'log-603',
+        timestamp: '2026-09-03 09:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '确认退回修改',
+        details: '支队确认同意退回，工单返回初始待更正下发状态。'
+      }
+    ]
   }
 ];

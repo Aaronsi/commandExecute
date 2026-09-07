@@ -15,6 +15,7 @@ interface TaskCreationModalProps {
   onClose: () => void;
   currentRole: UserRoleContext;
   onCreateTask: (task: DispatchTask) => void;
+  initialTask?: DispatchTask | null;
 }
 
 const PLATE_TYPES: PlateType[] = [
@@ -138,33 +139,41 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
   onClose,
   currentRole,
   onCreateTask,
+  initialTask,
 }) => {
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<TaskCategory>('车辆缉查');
-  const [urgency, setUrgency] = useState<'特急' | '紧急' | '常规'>('紧急');
-  const [completionRule, setCompletionRule] = useState<CompletionRule>('ANY_COMPLETE');
-  const [content, setContent] = useState('');
-  const [targetArea, setTargetArea] = useState('市辖主要道路及进出城主要通道卡口');
+  const isEditing = Boolean(initialTask);
+  const [title, setTitle] = useState(initialTask?.title || '');
+  const [category, setCategory] = useState<TaskCategory>(initialTask?.category || '车辆缉查');
+  const [urgency, setUrgency] = useState<'特急' | '紧急' | '常规'>(initialTask?.urgency || '紧急');
+  const [completionRule, setCompletionRule] = useState<CompletionRule>(initialTask?.completionRule || 'ANY_COMPLETE');
+  const [content, setContent] = useState(initialTask?.content || '');
+  const [targetArea, setTargetArea] = useState(initialTask?.targetArea || '市辖主要道路及进出城主要通道卡口');
   const [deadlineHours, setDeadlineHours] = useState('12');
 
   // Feedback elements configuration
-  const [feedbackConfigs, setFeedbackConfigs] = useState<FeedbackElementConfig[]>(DEFAULT_FEEDBACK_ELEMENTS);
+  const [feedbackConfigs, setFeedbackConfigs] = useState<FeedbackElementConfig[]>(
+    initialTask?.feedbackElements && initialTask.feedbackElements.length > 0
+      ? initialTask.feedbackElements
+      : DEFAULT_FEEDBACK_ELEMENTS
+  );
   const [customFieldModal, setCustomFieldModal] = useState(false);
   const [newFieldName, setNewFieldName] = useState('');
   const [newFieldType, setNewFieldType] = useState<'text' | 'select' | 'number'>('text');
   const [newFieldRequired, setNewFieldRequired] = useState(false);
 
   // Attachments
-  const [attachments, setAttachments] = useState<TaskAttachment[]>([
-    {
-      id: 'att-init-1',
-      name: '重点车辆轨迹研判与布控名单清单.pdf',
-      size: '1.8 MB',
-      type: 'application/pdf',
-      uploadedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      uploadedBy: currentRole.userName,
-    }
-  ]);
+  const [attachments, setAttachments] = useState<TaskAttachment[]>(
+    initialTask?.attachments || [
+      {
+        id: 'att-init-1',
+        name: '重点车辆轨迹研判与布控名单清单.pdf',
+        size: '1.8 MB',
+        type: 'application/pdf',
+        uploadedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        uploadedBy: currentRole.userName,
+      }
+    ]
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Target units
@@ -173,28 +182,40 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
     : MOCK_ORG_UNITS.filter((u) => u.level === 'squadron' && u.parentId === currentRole.unitId);
 
   const [selectedUnitIds, setSelectedUnitIds] = useState<string[]>(
-    availableTargetUnits.map((u) => u.id)
+    initialTask?.targetBrigadeIds && initialTask.targetBrigadeIds.length > 0
+      ? initialTask.targetBrigadeIds
+      : availableTargetUnits.map((u) => u.id)
   );
 
   // Target Vehicles
   const [vehicles, setVehicles] = useState<
     { id: string; plateNo: string; plateType: PlateType; riskReason: string; ownerName?: string }[]
-  >([
-    {
-      id: `v-init-1`,
-      plateNo: '浙A9988G',
-      plateType: '小型汽车',
-      riskReason: '多次严重违法未处理、涉嫌假牌套牌',
-      ownerName: '张*伟',
-    },
-    {
-      id: `v-init-2`,
-      plateNo: '浙A6632B',
-      plateType: '大型汽车',
-      riskReason: '逾期未检验上路、疲劳驾驶预警',
-      ownerName: '速安物流有限公司',
-    }
-  ]);
+  >(
+    initialTask?.vehicles && initialTask.vehicles.length > 0
+      ? initialTask.vehicles.map((v) => ({
+          id: v.id,
+          plateNo: v.plateNo,
+          plateType: v.plateType,
+          riskReason: v.riskReason,
+          ownerName: v.ownerName,
+        }))
+      : [
+          {
+            id: `v-init-1`,
+            plateNo: '浙A9988G',
+            plateType: '小型汽车',
+            riskReason: '多次严重违法未处理、涉嫌假牌套牌',
+            ownerName: '张*伟',
+          },
+          {
+            id: `v-init-2`,
+            plateNo: '浙A6632B',
+            plateType: '大型汽车',
+            riskReason: '逾期未检验上路、疲劳驾驶预警',
+            ownerName: '速安物流有限公司',
+          }
+        ]
+  );
 
   const [newPlateNo, setNewPlateNo] = useState('');
   const [newPlateType, setNewPlateType] = useState<PlateType>('小型汽车');
@@ -361,18 +382,20 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
     const deadlineDate = new Date(now.getTime() + parseInt(deadlineHours, 10) * 3600 * 1000);
     const deadlineStr = deadlineDate.toISOString().replace('T', ' ').substring(0, 19);
 
-    const taskNo = `${currentRole.level === 'branch' ? 'ZD' : 'DD'}-${now.getFullYear()}${String(
-      now.getMonth() + 1
-    ).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(
-      Math.floor(Math.random() * 900) + 100
-    )}`;
+    const taskNo = initialTask
+      ? initialTask.taskNo
+      : `${currentRole.level === 'branch' ? 'ZD' : 'DD'}-${now.getFullYear()}${String(
+          now.getMonth() + 1
+        ).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(
+          Math.floor(Math.random() * 900) + 100
+        )}`;
 
     // Build execution nodes for target brigades/squadrons
     const executionNodes = selectedUnitIds.map((uId) => {
       const unitObj = MOCK_ORG_UNITS.find((u) => u.id === uId);
       return {
         id: `node-${uId}-${Date.now()}`,
-        taskId: `task-${Date.now()}`,
+        taskId: initialTask ? initialTask.id : `task-${Date.now()}`,
         unitId: uId,
         unitName: unitObj?.name || uId,
         unitLevel: unitObj?.level || (currentRole.level === 'branch' ? 'brigade' : 'squadron'),
@@ -388,7 +411,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
     });
 
     const newTask: DispatchTask = {
-      id: `task-${Date.now()}`,
+      id: initialTask ? initialTask.id : `task-${Date.now()}`,
       taskNo,
       title: title.trim(),
       category,
@@ -396,7 +419,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
       creatorUnitId: currentRole.unitId,
       creatorUnitName: currentRole.unitName,
       creatorName: currentRole.userName,
-      createdAt: nowStr,
+      createdAt: initialTask ? initialTask.createdAt : nowStr,
       dispatchTime: nowStr,
       deadline: deadlineStr,
       urgency,
@@ -416,14 +439,25 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
       targetBrigadeIds: selectedUnitIds,
       executionNodes,
       overallStatus: 'PROCESSING',
+      cancelRecord: undefined,
+      returnRequest: initialTask?.returnRequest ? {
+        ...initialTask.returnRequest,
+        status: 'CONFIRMED',
+        confirmedBy: currentRole.userName,
+        confirmedTime: nowStr,
+        confirmRemarks: '已根据退单原因更正信息并重新正式下发',
+      } : undefined,
       actionLogs: [
+        ...(initialTask ? initialTask.actionLogs : []),
         {
           id: `log-${Date.now()}`,
           timestamp: nowStr,
           operatorName: currentRole.userName,
           operatorUnit: currentRole.unitName,
-          action: '指令创建并下发',
-          details: `【${category}】由 ${currentRole.unitName} 正式下发至 ${selectedUnitIds.length} 个单位，配置了 ${enabledElements.length} 项反馈要素字段（${feedbackConfigs.filter(f => f.enabled && f.required).length} 项必填），挂载附件 ${attachments.length} 个，目标车辆 ${vehicles.length} 辆。`,
+          action: initialTask ? '更正并重新下发（纠错重发）' : '指令创建并下发',
+          details: initialTask
+            ? `【${category}】由 ${currentRole.userName} 更正接收责任单位及指令信息，重新向 [${selectedUnitIds.map(id => MOCK_ORG_UNITS.find(u => u.id === id)?.name || id).join('、')}] 下发。工单重回正常流转待签收池。`
+            : `【${category}】由 ${currentRole.unitName} 正式下发至 ${selectedUnitIds.length} 个单位，配置了 ${enabledElements.length} 项反馈要素字段（${feedbackConfigs.filter(f => f.enabled && f.required).length} 项必填），挂载附件 ${attachments.length} 个，目标车辆 ${vehicles.length} 辆。`,
         },
       ],
     };
@@ -443,13 +477,18 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h2 className="text-base font-bold text-white">新建公安交警指挥调度指令</h2>
+                <h2 className="text-base font-bold text-white">
+                  {isEditing ? '更正并重新下发指令（纠错重发）' : '新建公安交警指挥调度指令'}
+                </h2>
                 <span className="text-[11px] bg-blue-500/30 text-blue-200 border border-blue-400/40 px-2 py-0.5 rounded font-medium">
-                  要素化下发与反馈配置
+                  {isEditing ? '已退回工单重发' : '要素化下发与反馈配置'}
                 </span>
               </div>
               <p className="text-xs text-slate-300">
-                下发发起人：{currentRole.userName} · {currentRole.unitName} ({currentRole.level === 'branch' ? '市支队指挥中心' : '交警大队指挥室'})
+                {isEditing 
+                  ? `更正操作人：${currentRole.userName} · ${currentRole.unitName} (原指令编号：${initialTask?.taskNo})`
+                  : `下发发起人：${currentRole.userName} · ${currentRole.unitName} (${currentRole.level === 'branch' ? '市支队指挥中心' : '交警大队指挥室'})`
+                }
               </p>
             </div>
           </div>
@@ -951,7 +990,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
               className="px-5 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition active:scale-95 flex items-center space-x-1.5"
             >
               <Shield className="w-3.5 h-3.5" />
-              <span>确认并正式下发指令</span>
+              <span>{isEditing ? '确认更正并重新下发指令' : '确认并正式下发指令'}</span>
             </button>
           </div>
         </div>

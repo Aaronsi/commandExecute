@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Sidebar, MainNavView } from './components/Sidebar';
 import { HeaderBar } from './components/HeaderBar';
 import { BranchHomeView } from './components/BranchHomeView';
+import { MyTodoView } from './components/MyTodoView';
 import { WorkbenchView } from './components/WorkbenchView';
 import { TaskListView } from './components/TaskListView';
 import { WarningListView } from './components/WarningListView';
@@ -14,8 +15,8 @@ import { INITIAL_TASKS } from './data/mockData';
 
 export default function App() {
   const [tasks, setTasks] = useState<DispatchTask[]>(INITIAL_TASKS);
-  // Default to branch_home as in Design 1, or easily switchable to workbench as in Design 2
-  const [activeView, setActiveView] = useState<MainNavView>('branch_home');
+  // Default to tasks (指令管理) or todo (我的待办)
+  const [activeView, setActiveView] = useState<MainNavView>('tasks');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   // Current user role context
@@ -29,11 +30,19 @@ export default function App() {
 
   const [selectedTask, setSelectedTask] = useState<DispatchTask | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<DispatchTask | null>(null);
 
   // Handlers
   const handleCreateTask = (newTask: DispatchTask) => {
-    setTasks([newTask, ...tasks]);
+    // If editing/re-dispatching an existing task, update it in place
+    const exists = tasks.some((t) => t.id === newTask.id);
+    if (exists) {
+      setTasks(tasks.map((t) => (t.id === newTask.id ? newTask : t)));
+    } else {
+      setTasks([newTask, ...tasks]);
+    }
     setSelectedTask(newTask);
+    setEditingTask(null);
   };
 
   const handleUpdateTask = (updatedTask: DispatchTask) => {
@@ -41,7 +50,30 @@ export default function App() {
     setSelectedTask(updatedTask);
   };
 
-  const processingCount = tasks.filter((t) => t.overallStatus === 'PROCESSING').length;
+  const handleReDispatchTask = (task: DispatchTask) => {
+    setEditingTask(task);
+    setIsCreateModalOpen(true);
+  };
+
+  // Compute pending items for current role
+  const todoCount = tasks.filter((t) => {
+    if (t.overallStatus !== 'PROCESSING') return false;
+    const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
+    if (myNode && myNode.status === 'PENDING_SIGN') return true;
+    if (myNode && (myNode.status === 'SIGNED' || myNode.status === 'FEEDBACK_SUBMITTED')) {
+      if (t.vehicles.some((v) => v.vehicleAuditStatus === 'PENDING' || v.vehicleAuditStatus === 'REJECTED')) {
+        return true;
+      }
+    }
+    if (
+      t.returnRequest?.status === 'PENDING_CONFIRM' &&
+      (t.creatorUnitId === currentRole.unitId || currentRole.level === 'branch')
+    ) {
+      return true;
+    }
+    return false;
+  }).length;
+
   const warningCount = 5;
 
   return (
@@ -52,6 +84,7 @@ export default function App() {
         onViewChange={setActiveView}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        todoCount={todoCount}
         taskCount={tasks.length}
         warningCount={warningCount}
       />
@@ -65,40 +98,51 @@ export default function App() {
           activeView={activeView}
           onViewChange={setActiveView}
           onToggleSidebar={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-          onOpenCreateModal={() => setIsCreateModalOpen(true)}
+          onOpenCreateModal={() => {
+            setEditingTask(null);
+            setIsCreateModalOpen(true);
+          }}
           warningCount={warningCount}
         />
 
         {/* View Router / Content Body */}
         <main className="flex-1 overflow-y-auto">
-          {/* 1. 支队首页 (Design 1) */}
-          {activeView === 'branch_home' && (
-            <BranchHomeView
-              tasks={tasks}
-              onSelectTask={setSelectedTask}
-              onNavigateToManagement={() => setActiveView('tasks')}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
-            />
-          )}
-
-          {/* 2. 工作台 (Design 2) */}
-          {activeView === 'workbench' && (
-            <WorkbenchView
+          {/* 1. 我的待办 (待签收、待反馈、待审核) */}
+          {(activeView === 'todo' || activeView === 'workbench') && (
+            <MyTodoView
               tasks={tasks}
               currentRole={currentRole}
               onSelectTask={setSelectedTask}
+              onUpdateTask={handleUpdateTask}
               onNavigateToManagement={() => setActiveView('tasks')}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
             />
           )}
 
-          {/* 3. 指令管理 (Full Task List & Multi-filter) */}
+          {/* 2. 指令管理 (综合台账、下发、撤销、退单、多维查询) */}
           {activeView === 'tasks' && (
             <TaskListView
               tasks={tasks}
               currentRole={currentRole}
               onSelectTask={setSelectedTask}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
+              onOpenCreateModal={() => {
+                setEditingTask(null);
+                setIsCreateModalOpen(true);
+              }}
+              onUpdateTask={handleUpdateTask}
+              onReDispatchTask={handleReDispatchTask}
+            />
+          )}
+
+          {/* 3. 支队首页 */}
+          {activeView === 'branch_home' && (
+            <BranchHomeView
+              tasks={tasks}
+              onSelectTask={setSelectedTask}
+              onNavigateToManagement={() => setActiveView('tasks')}
+              onOpenCreateModal={() => {
+                setEditingTask(null);
+                setIsCreateModalOpen(true);
+              }}
             />
           )}
 
@@ -107,7 +151,10 @@ export default function App() {
             <WarningListView
               tasks={tasks}
               onSelectTask={setSelectedTask}
-              onOpenCreateModal={() => setIsCreateModalOpen(true)}
+              onOpenCreateModal={() => {
+                setEditingTask(null);
+                setIsCreateModalOpen(true);
+              }}
             />
           )}
 
@@ -121,7 +168,7 @@ export default function App() {
         {/* Bottom subtle system watermark */}
         <footer className="border-t border-slate-200 py-3 bg-white text-slate-400 text-center text-[11px] px-6 flex flex-col sm:flex-row items-center justify-between">
           <span>公安交警指令下发与闭环反馈系统 · 市交警支队指挥调度中心</span>
-          <span className="font-mono">GA/T 16.7 车辆号牌规范 · 综合应用平台接口联动已就绪</span>
+          <span className="font-mono">GA/T 16.7 车辆号牌规范 · 派错纠错与退单重发留痕存证机制已启用</span>
         </footer>
       </div>
 
@@ -129,9 +176,13 @@ export default function App() {
       {isCreateModalOpen && (
         <TaskCreationModal
           isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
+          onClose={() => {
+            setIsCreateModalOpen(false);
+            setEditingTask(null);
+          }}
           currentRole={currentRole}
           onCreateTask={handleCreateTask}
+          initialTask={editingTask}
         />
       )}
 
