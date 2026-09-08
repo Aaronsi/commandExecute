@@ -332,7 +332,7 @@ export const WarningListView: React.FC<WarningListViewProps> = ({
         <div className="flex items-center space-x-3">
           <div className="w-2.5 h-6 bg-rose-600 rounded-full" />
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <span>指令督办中心（原指令异常预警）</span>
+            <span>指令督办中心</span>
             <span className="text-sm font-normal text-slate-500">· 实时监控流转卡阻、逾期未签收、超期未反馈与多次驳回</span>
           </h1>
         </div>

@@ -229,3 +229,31 @@ export interface UserRoleContext {
   userName: string;
   policeNo: string;
 }
+
+export type NoticeType =
+  | 'TASK_CANCELLED'                 // 支队/大队已经撤销
+  | 'RETURN_APPROVED'                // 申请回退通过
+  | 'UPPER_DIRECT_RETURN'            // 上级主动退回修改 (召回更正)
+  | 'DISPATCH_NEW'                   // 新下发待签收 (支队到大队 / 转派到中队 / 大队自发到中队)
+  | 'AUDIT_REJECTED'                 // 审核未通过驳回 (待重新填报整改)
+  | 'SQUADRON_RETURN_REQUEST'        // 中队错件申请退单 (待大队审批)
+  | 'SQUADRON_FEEDBACK_SUBMITTED';   // 中队提交处置反馈 (待大队初审)
+
+export interface SystemNotice {
+  id: string;
+  type: NoticeType;
+  targetUnitId: string;        // 目标接收单位ID (如 brigade-01, squadron-01-01)
+  targetUnitName?: string;
+  targetLevel?: OrgLevel;
+  taskId: string;
+  taskNo: string;
+  taskTitle: string;
+  title: string;
+  content: string;
+  urgency?: '特急' | '紧急' | '常规';
+  timestamp: string;
+  isRead: boolean;
+  isDismissedFromToast?: boolean; // 在右下角浮窗中是否已忽略/已关闭
+  actionTab?: string;             // 对应待办的页签Key (如 PENDING_SIGN, PENDING_FEEDBACK, REJECTED_FIX, BRIGADE_DISPATCH_DOWN)
+  actionType?: 'GOTO_TODO' | 'VIEW_TASK'; // 跳转待办处理 还是 查看工单台账
+}

@@ -3,18 +3,23 @@ import {
   X, Shield, Clock, AlertTriangle, CheckCircle2, XCircle, 
   GitBranch, Send, ArrowRight, UserCheck, Search, Car, FileText, CheckSquare, Layers,
   Paperclip, Download, Tag, FileCheck, ExternalLink, Printer, Stamp, Filter, RefreshCw, Eye, Building2,
-  RotateCcw
+  RotateCcw, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord } from '../types';
+import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord, SystemNotice } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 import { VehicleEvidenceModal } from './VehicleEvidenceModal';
+import { AuditDialog } from './AuditDialog';
+import { VehicleInterceptionDialog } from './VehicleInterceptionDialog';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   task: DispatchTask;
+  taskList?: DispatchTask[];
+  onSwitchTask?: (task: DispatchTask) => void;
   currentRole: UserRoleContext;
   onUpdateTask?: (updatedTask: DispatchTask) => void;
+  onAddNotice?: (notice: SystemNotice) => void;
 }
 
 type DetailTab = 'tracking' | 'vehicles' | 'document' | 'logs';
@@ -23,17 +28,49 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   isOpen,
   onClose,
   task,
+  taskList,
+  onSwitchTask,
   currentRole,
   onUpdateTask,
+  onAddNotice,
 }) => {
   // Default to tracking (执行进度与流转跟踪)
   const [activeTab, setActiveTab] = useState<DetailTab>('tracking');
+
+  // Compute current task index in taskList for continuous work mode
+  const currentIndex = useMemo(() => {
+    if (!taskList || taskList.length === 0) return -1;
+    return taskList.findIndex((t) => t.id === task.id);
+  }, [taskList, task.id]);
 
   // Department filter for Vehicle Matrix tab (支队/大队多级部门筛选)
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('ALL');
 
   // Evidence preview modal state
   const [previewEvidenceVehicle, setPreviewEvidenceVehicle] = useState<TaskVehicle | null>(null);
+
+  // 逐车审核弹窗状态 (大队初审 / 支队终审)
+  const [auditVehicle, setAuditVehicle] = useState<TaskVehicle | null>(null);
+
+  // 逐车填报/重报弹窗状态
+  const [feedbackVehicle, setFeedbackVehicle] = useState<TaskVehicle | null>(null);
+
+  // 上级主动退回修改确认弹窗状态 (下级已签收但未反馈)
+  const [showUpperReturnModal, setShowUpperReturnModal] = useState(false);
+  const [upperReturnPreset, setUpperReturnPreset] = useState('发现下发目标车辆或信息录入有误');
+  const [upperReturnDetail, setUpperReturnDetail] = useState('');
+
+  // 判断发令上级是否可直接发起“退回修改” (下级已签收但未反馈/未完结)
+  const canDirectUpperReturn = useMemo(() => {
+    if (task.overallStatus !== 'PROCESSING') return false;
+    const isCreator = task.creatorUnitId === currentRole.unitId || currentRole.level === 'branch';
+    if (!isCreator) return false;
+    const hasSigned = task.executionNodes.some(
+      (n) => n.status === 'SIGNED' || n.status === 'DISPATCHED_DOWN' || n.status === 'FEEDBACK_SUBMITTED'
+    );
+    const isAllPassed = task.vehicles.length > 0 && task.vehicles.every((v) => v.vehicleAuditStatus === 'PASSED');
+    return hasSigned && !isAllPassed;
+  }, [task, currentRole]);
 
   if (!isOpen) return null;
 
@@ -77,6 +114,247 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const evalStatus = evaluateOverallCompletion(task);
+
+  // 执行发令上级主动退回修改 (召回更正)
+  const handleConfirmDirectReturn = () => {
+    if (!onUpdateTask) return;
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const reasonFull = `${upperReturnPreset}${upperReturnDetail.trim() ? `：${upperReturnDetail.trim()}` : ''}`;
+
+    const updatedTask: DispatchTask = {
+      ...task,
+      overallStatus: 'RETURNED_DRAFT',
+      returnRequest: {
+        requestedByUnitId: currentRole.unitId,
+        requestedByUnitName: currentRole.unitName,
+        requestedByName: `${currentRole.userName} (${currentRole.policeNo})`,
+        requestedTime: nowStr,
+        reason: `上级主动退回更正：${reasonFull}`,
+        status: 'CONFIRMED',
+        confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
+        confirmedTime: nowStr,
+        confirmRemarks: '发令上级在指令详情中主动发起召回更正，下级待办清空释放。',
+      },
+      executionNodes: [], // 彻底清空执行节点，下级待办彻底注销
+      actionLogs: [
+        ...task.actionLogs,
+        {
+          id: `log-upper-ret-${Date.now()}`,
+          timestamp: nowStr,
+          operatorName: currentRole.userName,
+          operatorUnit: currentRole.unitName,
+          action: '上级主动退回修改',
+          details: `由发令上级 ${currentRole.unitName} (${currentRole.userName}) 在下级已签收状态下主动发起退回修改。召回原因：【${reasonFull}】。系统已自动撤销下级各节点的待办任务与时效考核，工单返回【已退回·待更正重发】。`,
+        },
+      ],
+    };
+
+    onUpdateTask(updatedTask);
+
+    // 触发系统消息提醒（推送给所有被召回的下级大队/中队）
+    if (onAddNotice) {
+      task.executionNodes.forEach((node) => {
+        onAddNotice({
+          id: `notice-upper-ret-${Date.now()}-${node.unitId}`,
+          type: 'UPPER_DIRECT_RETURN',
+          targetUnitId: node.unitId,
+          targetUnitName: node.unitName,
+          targetLevel: node.unitLevel,
+          taskId: task.id,
+          taskNo: task.taskNo,
+          taskTitle: task.title,
+          title: '上级主动退回修改提醒 (任务召回)',
+          content: `${currentRole.unitName} 已对指令【${task.taskNo}】发起主动退回更正，贵单位待办已同步注销释放，不计入考核。原因：${reasonFull}`,
+          urgency: task.urgency,
+          timestamp: nowStr,
+          isRead: false,
+          isDismissedFromToast: false,
+          actionType: 'VIEW_TASK',
+        });
+      });
+    }
+
+    setShowUpperReturnModal(false);
+    onClose();
+  };
+
+  // 逐车审核提交处理 (初审/终审)
+  const handleAuditSubmit = (data: {
+    result: 'PASS' | 'REJECT';
+    remarks: string;
+    rejectReason?: string;
+  }) => {
+    if (!auditVehicle || !onUpdateTask) return;
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    const isBranch = currentRole.level === 'branch';
+    const isReject = data.result === 'REJECT';
+
+    const updatedVehicles = task.vehicles.map((v) => {
+      if (v.id === auditVehicle.id) {
+        if (isReject) {
+          return {
+            ...v,
+            vehicleAuditStatus: 'REJECTED' as const,
+            rejectReason: data.remarks,
+          };
+        } else {
+          return {
+            ...v,
+            vehicleAuditStatus: (isBranch ? 'PASSED' : 'BRIGADE_PASSED') as 'PASSED' | 'BRIGADE_PASSED',
+            brigadeAuditRemarks: !isBranch ? data.remarks : v.brigadeAuditRemarks,
+            branchAuditRemarks: isBranch ? data.remarks : v.branchAuditRemarks,
+          };
+        }
+      }
+      return v;
+    });
+
+    const isNowAllPassed =
+      task.completionRule === 'ANY_COMPLETE'
+        ? updatedVehicles.some((v) => v.vehicleAuditStatus === 'PASSED')
+        : updatedVehicles.every((v) => v.vehicleAuditStatus === 'PASSED');
+
+    const updatedTask: DispatchTask = {
+      ...task,
+      vehicles: updatedVehicles,
+      overallStatus: isNowAllPassed ? 'COMPLETED' : task.overallStatus,
+      actionLogs: [
+        ...task.actionLogs,
+        {
+          id: `log-audit-${Date.now()}`,
+          timestamp: nowStr,
+          operatorName: currentRole.userName,
+          operatorUnit: currentRole.unitName,
+          action: isReject
+            ? (isBranch ? '支队终审驳回' : '大队初审驳回')
+            : (isBranch ? '支队终审通过' : '大队初审通过'),
+          details: `${currentRole.unitName} 对车辆【${auditVehicle.plateNo}】进行了审核（${
+            isReject ? '驳回整改' : '审核通过'
+          }）。意见：【${data.remarks}】。`,
+        },
+      ],
+    };
+
+    onUpdateTask(updatedTask);
+
+    // 驳回时触发系统消息提醒通知责任下级
+    if (isReject && onAddNotice) {
+      const targetUnitId = auditVehicle.interceptedByUnitId || (isBranch ? 'brigade-01' : 'squadron-01-01');
+      const targetUnitName = auditVehicle.interceptedByUnitName || (isBranch ? '直属一大队' : '城东一中队');
+      const targetLevel = targetUnitId.startsWith('squadron') ? 'squadron' : 'brigade';
+
+      onAddNotice({
+        id: `notice-rej-${Date.now()}`,
+        type: 'AUDIT_REJECTED',
+        targetUnitId,
+        targetUnitName,
+        targetLevel,
+        taskId: task.id,
+        taskNo: task.taskNo,
+        taskTitle: task.title,
+        title: isBranch ? '支队审核提交反馈车辆不通过' : '大队初审驳回车辆处置反馈待整改',
+        content: `${currentRole.unitName} 审核驳回了车辆【${auditVehicle.plateNo}】的处置凭证：${data.remarks}。请及时在我的待办中补齐重报。`,
+        urgency: task.urgency,
+        timestamp: nowStr,
+        isRead: false,
+        isDismissedFromToast: false,
+        actionTab: targetLevel === 'squadron' ? 'REJECTED_FIX' : 'PENDING_FEEDBACK',
+        actionType: 'GOTO_TODO',
+      });
+    }
+
+    setAuditVehicle(null);
+  };
+
+  // 逐车反馈提交处理
+  const handleFeedbackSubmit = (data: {
+    vehicleId: string;
+    plateNo: string;
+    plateType: PlateType;
+    disposalRecord: ThirdPartyDisposalRecord;
+    feedbackRemarks: string;
+    location: string;
+    evidenceImages?: string[];
+    dynamicFeedbackValues?: Record<string, any>;
+  }) => {
+    if (!onUpdateTask) return;
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+
+    const updatedVehicles = task.vehicles.map((v) => {
+      if (v.id === data.vehicleId) {
+        return {
+          ...v,
+          isIntercepted: true,
+          interceptedByUnitId: currentRole.unitId,
+          interceptedByUnitName: currentRole.unitName,
+          interceptedTime: nowStr,
+          disposalRecord: data.disposalRecord,
+          feedbackRemarks: data.feedbackRemarks,
+          vehicleAuditStatus: 'PENDING' as const,
+          rejectReason: undefined,
+        };
+      }
+      return v;
+    });
+
+    const updatedNodes = task.executionNodes.map((n) => {
+      if (n.unitId === currentRole.unitId) {
+        return {
+          ...n,
+          status: 'FEEDBACK_SUBMITTED' as const,
+          feedbackSummary: `已处置查扣车辆【${data.plateNo}】，凭证号：${data.disposalRecord.punishmentCode}`,
+          feedbackTime: nowStr,
+        };
+      }
+      return n;
+    });
+
+    const updatedTask: DispatchTask = {
+      ...task,
+      vehicles: updatedVehicles,
+      executionNodes: updatedNodes,
+      actionLogs: [
+        ...task.actionLogs,
+        {
+          id: `log-fb-${Date.now()}`,
+          timestamp: nowStr,
+          operatorName: currentRole.userName,
+          operatorUnit: currentRole.unitName,
+          action: '填报车辆处置凭证',
+          details: `${currentRole.unitName} 民警完成了车辆【${data.plateNo}】的现场处置并录入凭证【${data.disposalRecord.punishmentCode}】。`,
+        },
+      ],
+    };
+
+    onUpdateTask(updatedTask);
+
+    if (onAddNotice && currentRole.level === 'squadron') {
+      const parentUnit = MOCK_ORG_UNITS.find((u) => u.id === currentRole.unitId);
+      const targetBrigadeId = parentUnit?.parentId || 'brigade-01';
+      const targetBrigade = MOCK_ORG_UNITS.find((u) => u.id === targetBrigadeId);
+      onAddNotice({
+        id: `notice-sq-fb-${Date.now()}`,
+        type: 'SQUADRON_FEEDBACK_SUBMITTED',
+        targetUnitId: targetBrigadeId,
+        targetUnitName: targetBrigade?.name || '直属一大队',
+        targetLevel: 'brigade',
+        taskId: task.id,
+        taskNo: task.taskNo,
+        taskTitle: task.title,
+        title: '中队提交处置凭证待大队初审',
+        content: `${currentRole.unitName} 已对指令【${task.taskNo}】目标车辆【${data.plateNo}】完成查扣并录入凭证（${data.disposalRecord.punishmentCode}），待大队指挥员初审报送。`,
+        urgency: task.urgency,
+        timestamp: '刚刚',
+        isRead: false,
+        isDismissedFromToast: false,
+        actionTab: 'BRIGADE_AUDIT',
+        actionType: 'GOTO_TODO',
+      });
+    }
+
+    setFeedbackVehicle(null);
+  };
 
   // Group brigade and squadron nodes for topology view
   const brigadeNodes = task.executionNodes.filter((n) => n.unitLevel === 'brigade');
@@ -221,12 +499,44 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            {taskList && taskList.length > 1 && onSwitchTask && currentIndex !== -1 && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg shadow-2xs">
+                <button
+                  id="btn-prev-task-modal"
+                  disabled={currentIndex <= 0}
+                  onClick={() => onSwitchTask(taskList[currentIndex - 1])}
+                  className="p-1 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none hover:bg-slate-100 transition"
+                  title="切换至上一条工单"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-1.5 px-1.5 text-xs font-semibold text-slate-700">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-normal">
+                    连续作业模式
+                  </span>
+                  <span className="font-mono">{currentIndex + 1} / {taskList.length}</span>
+                </div>
+                <button
+                  id="btn-next-task-modal"
+                  disabled={currentIndex >= taskList.length - 1}
+                  onClick={() => onSwitchTask(taskList[currentIndex + 1])}
+                  className="p-1 rounded text-slate-500 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none hover:bg-slate-100 transition"
+                  title="切换至下一条工单"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            <button
+              id="btn-close-task-modal"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Dynamic Completion Rule Banner with Progress Metric */}
@@ -261,10 +571,23 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             </span>
           </div>
 
-          <div className="text-xs text-slate-500 flex items-center space-x-1.5">
-            <span>台账综合详情模式（如需签收、反馈或审核处置，请前往</span>
-            <strong className="text-blue-700">「我的待办」</strong>
-            <span>专区）</span>
+          <div className="flex items-center space-x-3">
+            {canDirectUpperReturn && (
+              <button
+                type="button"
+                onClick={() => setShowUpperReturnModal(true)}
+                className="flex items-center space-x-1.5 px-3 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold text-xs shadow-2xs transition active:scale-95 cursor-pointer"
+                title="下级已签收但未反馈，发令上级可直接发起退回修改"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                <span>退回修改 (召回更正)</span>
+              </button>
+            )}
+            <div className="text-xs text-slate-500 flex items-center space-x-1.5">
+              <span>台账综合详情模式（如需签收、反馈或审核处置，请前往</span>
+              <strong className="text-blue-700">「我的待办」</strong>
+              <span>专区）</span>
+            </div>
           </div>
         </div>
 
@@ -325,401 +648,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
         {/* Tab Contents */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* ========================================================================= */}
-          {/* TAB 1: ⚡ 业务办理中心 (我的待办与处置) - 遵循最小需要操作原则 */}
-          {/* ========================================================================= */}
-          {activeTab === 'actions' && (
-            <div className="space-y-6">
-              {/* 1. 中队业务操作区 (Squadron Action Station) */}
-              {currentRole.level === 'squadron' && (
-                <div className="space-y-5">
-                  {/* Squadron Pending Sign Banner */}
-                  {myNode && myNode.status === 'PENDING_SIGN' && (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between shadow-xs">
-                      <div className="space-y-1">
-                        <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span>待中队签收确认调度令</span>
-                        </div>
-                        <p className="text-xs text-amber-700">
-                          上级大队已下派本指令。请中队长或执勤警员先行签收确认，签收后立即组织警力进行路面布控拦截。
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleSignIn(myNode.id)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 shrink-0"
-                      >
-                        <UserCheck className="w-4 h-4" />
-                        <span>一键签收指令</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Squadron Vehicle Feedback Desk (本中队车辆处置与反馈清单) */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <Car className="w-4 h-4 text-blue-600" />
-                        <span>本中队负责车辆处置与要素化反馈清单</span>
-                      </h3>
-                      <span className="text-[11px] text-slate-500">
-                        需对指令目标车辆逐一查处，并联动六合一平台凭证填报反馈
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      {task.vehicles.map((veh) => {
-                        const isRejected = veh.vehicleAuditStatus === 'REJECTED';
-                        const isSubmitted = veh.isIntercepted && veh.vehicleAuditStatus !== 'REJECTED';
-                        const isPassed = veh.vehicleAuditStatus === 'PASSED';
-
-                        return (
-                          <div
-                            key={veh.id}
-                            className={`p-4 rounded-xl border transition ${
-                              isRejected
-                                ? 'bg-rose-50/70 border-rose-300 ring-1 ring-rose-300/30'
-                                : isPassed
-                                ? 'bg-emerald-50/50 border-emerald-200'
-                                : isSubmitted
-                                ? 'bg-blue-50/40 border-blue-200'
-                                : 'bg-white border-slate-200 hover:border-slate-300'
-                            } shadow-xs`}
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="space-y-1.5">
-                                <div className="flex items-center space-x-2">
-                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono font-bold text-xs px-2.5 py-0.5 rounded">
-                                    {veh.plateNo}
-                                  </span>
-                                  <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                    {veh.plateType}
-                                  </span>
-                                  <span className="text-xs text-slate-500">
-                                    {veh.vehicleModel || '车型未登记'}
-                                  </span>
-                                  
-                                  {/* Status Badges */}
-                                  {isPassed ? (
-                                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded flex items-center gap-1">
-                                      <CheckCircle2 className="w-3.5 h-3.5" /> 支队终审通过 · 已闭环
-                                    </span>
-                                  ) : veh.vehicleAuditStatus === 'BRIGADE_PASSED' ? (
-                                    <span className="text-[11px] font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                                      大队初审通过 · 等待支队终审
-                                    </span>
-                                  ) : isRejected ? (
-                                    <span className="text-[11px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded flex items-center gap-1">
-                                      <AlertTriangle className="w-3.5 h-3.5" /> 审核驳回 · 待修改重报
-                                    </span>
-                                  ) : isSubmitted ? (
-                                    <span className="text-[11px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
-                                      已提交反馈 · 待大队审核
-                                    </span>
-                                  ) : (
-                                    <span className="text-[11px] font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
-                                      未反馈 · 等待路面查扣
-                                    </span>
-                                  )}
-                                </div>
-
-                                <div className="text-xs text-slate-600">
-                                  布控原因：<span className="text-slate-800 font-medium">{veh.riskReason}</span>
-                                </div>
-
-                                {/* Rejection Details Banner if Rejected */}
-                                {isRejected && (
-                                  <div className="mt-2 p-2.5 bg-rose-100/70 border border-rose-200 rounded-lg text-xs text-rose-900">
-                                    <div className="font-bold flex items-center gap-1">
-                                      <XCircle className="w-3.5 h-3.5 text-rose-600" />
-                                      <span>上级审核驳回意见：</span>
-                                    </div>
-                                    <p className="mt-0.5 pl-4 text-[11px] text-rose-800">
-                                      {veh.rejectReason || '处置凭证或现场信息不齐备，请核验文书真实性后重新填报。'}
-                                    </p>
-                                  </div>
-                                )}
-
-                                {/* Submitted disposal info summary */}
-                                {veh.disposalRecord && (
-                                  <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2 mt-1">
-                                    <span>六合一凭证：{veh.disposalRecord.punishmentCode}</span>
-                                    <span>|</span>
-                                    <span>处警民警：{veh.disposalRecord.policeOfficer}</span>
-                                    <span>|</span>
-                                    <span>时间：{veh.disposalRecord.disposalTime}</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Action Buttons for Squadron */}
-                              <div className="flex items-center space-x-2 shrink-0">
-                                {(!veh.isIntercepted || isRejected) && (
-                                  <button
-                                    onClick={() => setInterceptionTarget({ node: myNode || task.executionNodes[0], vehicle: veh })}
-                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-xs transition active:scale-95 flex items-center gap-1 ${
-                                      isRejected ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                                    }`}
-                                  >
-                                    <FileCheck className="w-3.5 h-3.5" />
-                                    <span>{isRejected ? '重新提交整改反馈' : '⚡ 填报此车处置反馈'}</span>
-                                  </button>
-                                )}
-
-                                {veh.disposalRecord && (
-                                  <button
-                                    onClick={() => setPreviewEvidenceVehicle(veh)}
-                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 shadow-2xs transition flex items-center gap-1"
-                                  >
-                                    <Eye className="w-3.5 h-3.5 text-slate-500" />
-                                    <span>查看文书凭证</span>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* 2. 大队业务操作区 (Brigade Action Station) */}
-              {currentRole.level === 'brigade' && (
-                <div className="space-y-6">
-                  {/* Brigade Pending Sign Banner */}
-                  {myNode && myNode.status === 'PENDING_SIGN' && (
-                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between shadow-xs">
-                      <div className="space-y-1">
-                        <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span>待直属大队签收上级指令</span>
-                        </div>
-                        <p className="text-xs text-amber-700">
-                          市交警支队已下派本调度令。大队签收后可选择转派下发下辖执勤中队，或由大队自办处置。
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleSignIn(myNode.id)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-1.5 shrink-0"
-                      >
-                        <UserCheck className="w-4 h-4" />
-                        <span>一键签收指令</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Brigade Dispatch Down or Self-Handle Chooser */}
-                  {myNode && myNode.status === 'SIGNED' && (
-                    <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-3">
-                      <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-blue-600" />
-                        <span>大队处置路径调度（已签收）</span>
-                      </div>
-                      <p className="text-xs text-slate-600">
-                        请根据辖区警力布控情况，选择将本指令转派至下辖中队执行，或由大队机动力量自办处理：
-                      </p>
-
-                      <div className="flex flex-wrap gap-3 pt-1">
-                        <button
-                          onClick={() => {
-                            setDispatchDownModalNode(myNode);
-                            const defaultSq = MOCK_ORG_UNITS.filter((u) => u.parentId === myNode.unitId).map((u) => u.id);
-                            setSelectedSquadronIds(defaultSq);
-                          }}
-                          className="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-2"
-                        >
-                          <Send className="w-4 h-4" />
-                          <span>转派下发至下辖执勤中队</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            const targetVeh = task.vehicles.find((v) => !v.isIntercepted) || task.vehicles[0];
-                            setInterceptionTarget({ node: myNode, vehicle: targetVeh });
-                          }}
-                          className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition active:scale-95 flex items-center gap-2"
-                        >
-                          <FileCheck className="w-4 h-4" />
-                          <span>大队自办处置并录入反馈</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Brigade Pending Audit List (待大队初审车辆核验清单) */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <CheckSquare className="w-4 h-4 text-blue-600" />
-                        <span>待大队初审车辆核验清单 ({vehiclesNeedingBrigadeAudit.length})</span>
-                      </h3>
-                      <span className="text-[11px] text-slate-500">
-                        下属中队提交的现场处置记录，需由大队长初审核验后呈报支队终审
-                      </span>
-                    </div>
-
-                    {vehiclesNeedingBrigadeAudit.length > 0 ? (
-                      <div className="space-y-3">
-                        {vehiclesNeedingBrigadeAudit.map(({ node, vehicle }) => (
-                          <div
-                            key={`${node.id}-${vehicle.id}`}
-                            className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-3"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono font-bold text-xs px-2.5 py-0.5 rounded">
-                                    {vehicle.plateNo}
-                                  </span>
-                                  <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                    {vehicle.plateType}
-                                  </span>
-                                  <span className="text-xs text-blue-700 font-semibold">
-                                    处置中队：{node.unitName}
-                                  </span>
-                                </div>
-
-                                <div className="text-xs text-slate-600">
-                                  查处民警：<strong className="text-slate-800">{vehicle.disposalRecord?.policeOfficer}</strong> | 
-                                  六合一文书号：<span className="font-mono text-blue-800">{vehicle.disposalRecord?.punishmentCode}</span> | 
-                                  查处时间：<span className="font-mono text-slate-700">{vehicle.disposalRecord?.disposalTime}</span>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={() => setPreviewEvidenceVehicle(vehicle)}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition"
-                                >
-                                  查看卷宗
-                                </button>
-                                <button
-                                  onClick={() => setAuditTarget({ node, vehicle })}
-                                  className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition active:scale-95 flex items-center gap-1"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>大队初审核验 (通过 / 驳回)</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-6 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500">
-                        当前暂无待大队初审的车辆反馈。
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* 3. 支队业务操作区 (Branch Action Station) */}
-              {currentRole.level === 'branch' && (
-                <div className="space-y-6">
-                  {/* Branch Final Audit List (待支队终审核验清单) */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <Shield className="w-4 h-4 text-blue-600" />
-                        <span>待支队终审核验车辆清单 ({vehiclesNeedingBranchAudit.length})</span>
-                      </h3>
-                      <span className="text-[11px] text-slate-500">
-                        大队初审通过或自办反馈上报的车辆，支队终审通过后直接计入完结考核
-                      </span>
-                    </div>
-
-                    {vehiclesNeedingBranchAudit.length > 0 ? (
-                      <div className="space-y-3">
-                        {vehiclesNeedingBranchAudit.map(({ node, vehicle }) => (
-                          <div
-                            key={`${node.id}-${vehicle.id}`}
-                            className="p-4 bg-white border border-blue-200 rounded-xl shadow-xs space-y-3 ring-1 ring-blue-100"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="space-y-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono font-bold text-xs px-2.5 py-0.5 rounded">
-                                    {vehicle.plateNo}
-                                  </span>
-                                  <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                    {vehicle.plateType}
-                                  </span>
-                                  <span className="text-xs font-semibold text-blue-700">
-                                    提交单位：{node.unitName}
-                                  </span>
-                                  <span className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-medium">
-                                    ✓ 大队初审已通过
-                                  </span>
-                                </div>
-
-                                <div className="text-xs text-slate-600">
-                                  六合一处罚凭证：<span className="font-mono font-bold text-blue-900">{vehicle.disposalRecord?.punishmentCode}</span> | 
-                                  处警时间：<span className="font-mono text-slate-800">{vehicle.disposalRecord?.disposalTime}</span> | 
-                                  强制措施：<span className="font-medium text-slate-800">{vehicle.disposalRecord?.disposalType}</span>
-                                </div>
-
-                                {node.brigadeAudit && (
-                                  <div className="text-[11px] text-slate-500 mt-1">
-                                    大队初审批注：{node.brigadeAudit.remarks} (审核人：{node.brigadeAudit.auditor})
-                                  </div>
-                                )}
-                              </div>
-
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  onClick={() => setPreviewEvidenceVehicle(vehicle)}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition"
-                                >
-                                  查看卷宗
-                                </button>
-                                <button
-                                  onClick={() => setAuditTarget({ node, vehicle })}
-                                  className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition active:scale-95 flex items-center gap-1.5"
-                                >
-                                  <Shield className="w-3.5 h-3.5" />
-                                  <span>支队终审核验 (通过 / 驳回)</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="p-6 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs text-slate-500">
-                        当前暂无待支队终审的车辆反馈。
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Branch Instruction Completion Progress Card */}
-                  <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                    <div className="flex items-center justify-between text-xs font-bold text-slate-900">
-                      <span>指令考核收敛进度 (根据支队终审通过车辆数)</span>
-                      <span className="font-mono text-blue-700">
-                        {evalStatus.passedVehiclesCount} / {evalStatus.totalVehiclesCount} 辆通过
-                      </span>
-                    </div>
-
-                    <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-blue-600 rounded-full transition-all duration-500"
-                        style={{ width: `${evalStatus.totalVehiclesCount > 0 ? (evalStatus.passedVehiclesCount / evalStatus.totalVehiclesCount) * 100 : 0}%` }}
-                      />
-                    </div>
-
-                    <div className="text-xs text-slate-600 flex items-center justify-between">
-                      <span>模式：{task.completionRule === 'ANY_COMPLETE' ? '任一完成（通过≥1辆即办结）' : '全部完成（全量通过才办结）'}</span>
-                      <span className="font-semibold text-slate-800">{evalStatus.summary}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* ========================================================================= */}
           {/* TAB 2: 📊 执行跟踪与流转拓扑 (纯查看监控) - 遵循最小查看原则与操作分离 */}
           {/* ========================================================================= */}
@@ -1031,16 +959,55 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                           </td>
 
                           <td className="p-3 text-right">
-                            {veh.isIntercepted ? (
-                              <button
-                                onClick={() => setPreviewEvidenceVehicle(veh)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition"
-                              >
-                                查看卷宗证据
-                              </button>
-                            ) : (
-                              <span className="text-slate-400 text-[11px]">未处置</span>
-                            )}
+                            <div className="flex items-center justify-end space-x-1.5">
+                              {/* 查看卷宗证据 */}
+                              {veh.isIntercepted && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewEvidenceVehicle(veh)}
+                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition"
+                                >
+                                  查看卷宗
+                                </button>
+                              )}
+
+                              {/* 大队初审按钮 */}
+                              {currentRole.level === 'brigade' && veh.isIntercepted && (veh.vehicleAuditStatus === 'PENDING' || !veh.vehicleAuditStatus) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAuditVehicle(veh)}
+                                  className="px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold shadow-xs transition"
+                                >
+                                  大队初审
+                                </button>
+                              )}
+
+                              {/* 支队终审按钮 */}
+                              {currentRole.level === 'branch' && veh.isIntercepted && veh.vehicleAuditStatus !== 'PASSED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAuditVehicle(veh)}
+                                  className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold shadow-xs transition"
+                                >
+                                  支队终审
+                                </button>
+                              )}
+
+                              {/* 逐车填报反馈 / 驳回整改重报 */}
+                              {(!veh.isIntercepted || veh.vehicleAuditStatus === 'REJECTED') && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFeedbackVehicle(veh)}
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold shadow-xs transition ${
+                                    veh.vehicleAuditStatus === 'REJECTED'
+                                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                                  }`}
+                                >
+                                  {veh.vehicleAuditStatus === 'REJECTED' ? '补正重报' : '填报反馈'}
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1201,15 +1168,48 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
         {/* Modal Footer */}
         <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
-          <div className="text-xs text-slate-500">
-            公安交通集成指挥调度子系统 · 多级闭环协同引擎
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+            {taskList && taskList.length > 1 && currentIndex !== -1 ? (
+              <span className="text-slate-600">
+                当前为<strong>连续作业模式</strong>，正在查看第 <strong className="font-mono text-blue-600">{currentIndex + 1}</strong> 条（共 {taskList.length} 条待办）
+              </span>
+            ) : (
+              <span>公安交通集成指挥调度子系统 · 多级闭环协同引擎</span>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-xs transition"
-          >
-            关闭详情
-          </button>
+
+          <div className="flex items-center gap-2">
+            {taskList && taskList.length > 1 && onSwitchTask && currentIndex !== -1 && (
+              <>
+                <button
+                  id="btn-footer-prev-task"
+                  disabled={currentIndex <= 0}
+                  onClick={() => onSwitchTask(taskList[currentIndex - 1])}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>上一条</span>
+                </button>
+                <button
+                  id="btn-footer-next-task"
+                  disabled={currentIndex >= taskList.length - 1}
+                  onClick={() => onSwitchTask(taskList[currentIndex + 1])}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1"
+                >
+                  <span>下一条</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
+
+            <button
+              id="btn-footer-close"
+              onClick={onClose}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition"
+            >
+              关闭详情
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1222,6 +1222,119 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           taskTitle={task.title}
           taskDispatchTime={task.dispatchTime}
         />
+      )}
+
+      {/* 逐车审核流转弹窗 (大队初审 / 支队终审) */}
+      {auditVehicle && (
+        <AuditDialog
+          isOpen={true}
+          onClose={() => setAuditVehicle(null)}
+          nodeId={auditVehicle.interceptedByUnitId || currentRole.unitId}
+          unitName={auditVehicle.interceptedByUnitName || currentRole.unitName}
+          vehicle={auditVehicle}
+          taskDispatchTime={task.dispatchTime}
+          currentRole={currentRole}
+          onAuditSubmit={handleAuditSubmit}
+        />
+      )}
+
+      {/* 逐车拦截处置填报与驳回重报弹窗 */}
+      {feedbackVehicle && (
+        <VehicleInterceptionDialog
+          isOpen={true}
+          onClose={() => setFeedbackVehicle(null)}
+          vehicle={{
+            vehicleId: feedbackVehicle.id,
+            plateNo: feedbackVehicle.plateNo,
+            plateType: feedbackVehicle.plateType,
+            riskReason: feedbackVehicle.riskReason,
+          }}
+          taskDispatchTime={task.dispatchTime}
+          taskCategory={task.category}
+          feedbackElements={task.feedbackElements}
+          currentRole={currentRole}
+          onSubmitFeedback={handleFeedbackSubmit}
+        />
+      )}
+
+      {/* Sub-modal: Upper direct return confirmation (召回退回修改) */}
+      {showUpperReturnModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center space-x-2 text-amber-700">
+                <RotateCcw className="w-5 h-5" />
+                <h3 className="text-sm font-bold">上级主动退回修改确认（已签收召回）</h3>
+              </div>
+              <button
+                onClick={() => setShowUpperReturnModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-3">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
+                <div>指令编号：<strong className="font-mono">{task.taskNo}</strong></div>
+                <div>指令标题：<strong>{task.title}</strong></div>
+                <div className="text-[11px] text-amber-800 leading-relaxed pt-1.5 border-t border-amber-200/60">
+                  ⚠️ <strong>业务机制说明：</strong>当前下级责任单位<strong>已完成签收</strong>。
+                  发令上级可在下级完成最终处置反馈前，主动发起<strong>召回退回修改</strong>。
+                  确认后，系统将<strong>自动撤销下级单位各节点的待办任务</strong>，不计入下级考核及超时时效；
+                  工单直接返回您的<strong>【已退回·待更正重发】</strong>池，修改后可一键重新下发。
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  退回修改原因 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={upperReturnPreset}
+                  onChange={(e) => setUpperReturnPreset(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
+                >
+                  <option value="发现下发目标车辆或信息录入有误">发现下发目标车辆或信息录入有误</option>
+                  <option value="研判核查无需继续路面拦截处置">研判核查无需继续路面拦截处置</option>
+                  <option value="责任管辖辖区指派需纠偏更正">责任管辖辖区指派需纠偏更正</option>
+                  <option value="指令处置要求与时限要素调整">指令处置要求与时限要素调整</option>
+                  <option value="其他情况发令上级主动召回">其他情况发令上级主动召回</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  更正说明与修改备注（选填）
+                </label>
+                <textarea
+                  rows={3}
+                  value={upperReturnDetail}
+                  onChange={(e) => setUpperReturnDetail(e.target.value)}
+                  placeholder="请输入需要修改更正的要点，便于重发时对齐核对..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowUpperReturnModal(false)}
+                className="px-3 py-1.5 rounded border border-slate-200 text-xs text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDirectReturn}
+                className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                确认退回修改
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -11,8 +11,9 @@ import { PunishStatsView } from './components/PunishStatsView';
 import { DesignOutlineView } from './components/DesignOutlineView';
 import { TaskCreationModal } from './components/TaskCreationModal';
 import { TaskDetailModal } from './components/TaskDetailModal';
-import { DispatchTask, UserRoleContext } from './types';
-import { INITIAL_TASKS } from './data/mockData';
+import { NotificationToast } from './components/NotificationToast';
+import { DispatchTask, UserRoleContext, SystemNotice } from './types';
+import { INITIAL_TASKS, INITIAL_SYSTEM_NOTICES } from './data/mockData';
 
 export default function App() {
   const [tasks, setTasks] = useState<DispatchTask[]>(INITIAL_TASKS);
@@ -20,6 +21,9 @@ export default function App() {
   const [activeView, setActiveView] = useState<MainNavView>('branch_home');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
+  // Real-time System Notices state
+  const [systemNotices, setSystemNotices] = useState<SystemNotice[]>(INITIAL_SYSTEM_NOTICES);
+
   // Current user role context
   const [currentRole, setCurrentRole] = useState<UserRoleContext>({
     unitId: 'branch-01',
@@ -39,6 +43,33 @@ export default function App() {
     filterCategory?: string;
     filterUrgency?: string;
   }>({});
+
+  // Handlers for System Notices
+  const handleAddNotice = (notice: SystemNotice) => {
+    setSystemNotices((prev) => [notice, ...prev]);
+  };
+
+  const handleDismissNotice = (noticeId: string) => {
+    setSystemNotices((prev) =>
+      prev.map((n) => (n.id === noticeId ? { ...n, isDismissedFromToast: true } : n))
+    );
+  };
+
+  const handleDismissAllForRole = () => {
+    setSystemNotices((prev) =>
+      prev.map((n) =>
+        n.targetUnitId === currentRole.unitId || n.targetLevel === currentRole.level
+          ? { ...n, isDismissedFromToast: true }
+          : n
+      )
+    );
+  };
+
+  const handleMarkNoticeAsRead = (noticeId: string) => {
+    setSystemNotices((prev) =>
+      prev.map((n) => (n.id === noticeId ? { ...n, isRead: true } : n))
+    );
+  };
 
   // Handlers
   const handleCreateTask = (newTask: DispatchTask) => {
@@ -124,6 +155,15 @@ export default function App() {
             setIsCreateModalOpen(true);
           }}
           warningCount={warningCount}
+          systemNotices={systemNotices}
+          onNavigateToTodo={(tabKey, taskNo) => handleNavigateToTodo(tabKey)}
+          onSelectTask={(taskId) => {
+            const target = tasks.find((t) => t.id === taskId || t.taskNo === taskId);
+            if (target) setSelectedTask(target);
+          }}
+          onDismissNotice={handleDismissNotice}
+          onMarkAsRead={handleMarkNoticeAsRead}
+          onDismissAllForRole={handleDismissAllForRole}
         />
 
         {/* View Router / Content Body (1.支队首页 2.工作台 3.指令管理 4.我的待办 5.指令督办 6.工作量统计 7.违法处罚统计 8.设计大纲与规范) */}
@@ -168,6 +208,7 @@ export default function App() {
               }}
               onUpdateTask={handleUpdateTask}
               onReDispatchTask={handleReDispatchTask}
+              onAddNotice={handleAddNotice}
             />
           )}
 
@@ -180,6 +221,7 @@ export default function App() {
               onUpdateTask={handleUpdateTask}
               onNavigateToManagement={() => setActiveView('tasks')}
               onReDispatchTask={handleReDispatchTask}
+              onAddNotice={handleAddNotice}
               initialTab={todoFilter.initialTab}
               filterCategory={todoFilter.filterCategory}
               filterUrgency={todoFilter.filterUrgency}
@@ -230,6 +272,7 @@ export default function App() {
           currentRole={currentRole}
           onCreateTask={handleCreateTask}
           initialTask={editingTask}
+          onAddNotice={handleAddNotice}
         />
       )}
 
@@ -241,8 +284,25 @@ export default function App() {
           task={selectedTask}
           currentRole={currentRole}
           onUpdateTask={handleUpdateTask}
+          onAddNotice={handleAddNotice}
         />
       )}
+
+      {/* Real-time System Notice Toast Component (Bottom Right) */}
+      <NotificationToast
+        notices={systemNotices}
+        currentRole={currentRole}
+        onNavigateToTodo={(tabKey, taskNo) => {
+          handleNavigateToTodo(tabKey);
+        }}
+        onSelectTask={(taskId) => {
+          const target = tasks.find((t) => t.id === taskId || t.taskNo === taskId);
+          if (target) setSelectedTask(target);
+        }}
+        onDismissNotice={handleDismissNotice}
+        onDismissAllForRole={handleDismissAllForRole}
+        onMarkAsRead={handleMarkNoticeAsRead}
+      />
     </div>
   );
 }

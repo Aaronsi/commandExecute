@@ -4,7 +4,7 @@ import {
   AlertTriangle, GitBranch, ArrowRight, Car, Plus, UserCheck, 
   RotateCcw, Eye, Ban, Send, AlertCircle, Check, X, Building2, Tag
 } from 'lucide-react';
-import { DispatchTask, CompletionRule, UserRoleContext, TaskCategory, OrgUnit } from '../types';
+import { DispatchTask, CompletionRule, UserRoleContext, TaskCategory, OrgUnit, SystemNotice } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 import { Pagination } from './Pagination';
 
@@ -15,6 +15,7 @@ interface TaskListViewProps {
   onOpenCreateModal: () => void;
   onUpdateTask?: (updatedTask: DispatchTask) => void;
   onReDispatchTask?: (task: DispatchTask) => void;
+  onAddNotice?: (notice: SystemNotice) => void;
 }
 
 export const TaskListView: React.FC<TaskListViewProps> = ({
@@ -24,6 +25,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   onOpenCreateModal,
   onUpdateTask,
   onReDispatchTask,
+  onAddNotice,
 }) => {
   // 按照需求：单独的输入与选择查询条件
   const [taskNoFilter, setTaskNoFilter] = useState('');
@@ -48,6 +50,11 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
   const [returnRequestModalTask, setReturnRequestModalTask] = useState<DispatchTask | null>(null);
   const [returnReasonPreset, setReturnReasonPreset] = useState('【非本辖区】车辆已驶离进入其他管辖大队');
   const [returnReasonDetail, setReturnReasonDetail] = useState('');
+
+  // 上级主动直接退回修改弹窗状态 (下级已签收但未反馈，发令上级可直接发起退回)
+  const [upperDirectReturnModalTask, setUpperDirectReturnModalTask] = useState<DispatchTask | null>(null);
+  const [upperDirectReturnPreset, setUpperDirectReturnPreset] = useState('发现下发目标车辆或信息录入有误');
+  const [upperDirectReturnDetail, setUpperDirectReturnDetail] = useState('');
 
   // 大队再下发给中队弹窗
   const [dispatchDownTask, setDispatchDownTask] = useState<DispatchTask | null>(null);
@@ -180,6 +187,22 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     return task.overallStatus === 'PROCESSING';
   };
 
+  // 判断发令上级是否可直接发起“退回修改” (下级已签收但未反馈/未完结)：
+  // 1. 发令上级操作 (支队发起的由支队操作，大队自发的由大队操作)
+  // 2. 指令处于流转中 (PROCESSING)
+  // 3. 下级单位已经签收 (存在已签收/已转派节点) 且未全单终审通过
+  const canDirectUpperReturn = (task: DispatchTask) => {
+    if (task.overallStatus !== 'PROCESSING') return false;
+    const isCreator = task.creatorUnitId === currentRole.unitId || currentRole.level === 'branch';
+    if (!isCreator) return false;
+    // 检查是否有节点已签收
+    const hasSigned = task.executionNodes.some(
+      (n) => n.status === 'SIGNED' || n.status === 'DISPATCHED_DOWN' || n.status === 'FEEDBACK_SUBMITTED'
+    );
+    const isAllPassed = task.vehicles.length > 0 && task.vehicles.every((v) => v.vehicleAuditStatus === 'PASSED');
+    return hasSigned && !isAllPassed;
+  };
+
   // 执行“未签收错件撤销”
   const handleConfirmCancelError = () => {
     if (!cancelModalTask || !onUpdateTask) return;
@@ -214,6 +237,29 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     };
 
     onUpdateTask(updatedTask);
+
+    if (onAddNotice) {
+      cancelModalTask.executionNodes.forEach((node) => {
+        onAddNotice({
+          id: `notice-cancel-${Date.now()}-${node.unitId}`,
+          type: 'TASK_CANCELLED',
+          targetUnitId: node.unitId,
+          targetUnitName: node.unitName,
+          targetLevel: node.unitLevel,
+          taskId: cancelModalTask.id,
+          taskNo: cancelModalTask.taskNo,
+          taskTitle: cancelModalTask.title,
+          title: '指令已撤销作废提醒',
+          content: `${currentRole.unitName} 已撤销作废指令【${cancelModalTask.taskNo}】，已从待办中自动清除。理由：${reasonFull}`,
+          urgency: cancelModalTask.urgency,
+          timestamp: nowStr,
+          isRead: false,
+          isDismissedFromToast: false,
+          actionType: 'VIEW_TASK',
+        });
+      });
+    }
+
     setCancelModalTask(null);
     setCancelReasonDetail('');
   };
@@ -254,6 +300,31 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     };
 
     onUpdateTask(updatedTask);
+
+    if (onAddNotice && currentRole.level === 'squadron') {
+      const parentUnit = MOCK_ORG_UNITS.find((u) => u.id === currentRole.unitId);
+      const targetBrigadeId = parentUnit?.parentId || 'brigade-01';
+      const targetBrigade = MOCK_ORG_UNITS.find((u) => u.id === targetBrigadeId);
+      onAddNotice({
+        id: `notice-sq-ret-${Date.now()}`,
+        type: 'SQUADRON_RETURN_REQUEST',
+        targetUnitId: targetBrigadeId,
+        targetUnitName: targetBrigade?.name || '直属一大队',
+        targetLevel: 'brigade',
+        taskId: returnRequestModalTask.id,
+        taskNo: returnRequestModalTask.taskNo,
+        taskTitle: returnRequestModalTask.title,
+        title: '中队错件申请退单待大队审批',
+        content: `${currentRole.unitName} 就指令【${returnRequestModalTask.taskNo}】提交错件退单申请。理由：【${reasonFull}】。请大队指挥员及时审批。`,
+        urgency: returnRequestModalTask.urgency,
+        timestamp: '刚刚',
+        isRead: false,
+        isDismissedFromToast: false,
+        actionTab: 'RETURN_CONFIRM',
+        actionType: 'GOTO_TODO',
+      });
+    }
+
     setReturnRequestModalTask(null);
     setReturnReasonDetail('');
   };
@@ -300,6 +371,88 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
     };
 
     onUpdateTask(updatedTask);
+
+    if (onAddNotice && task.returnRequest) {
+      onAddNotice({
+        id: `notice-ret-appr-${Date.now()}`,
+        type: 'RETURN_APPROVED',
+        targetUnitId: task.returnRequest.requestedByUnitId,
+        targetUnitName: task.returnRequest.requestedByUnitName,
+        targetLevel: task.returnRequest.requestedByUnitId.startsWith('squadron') ? 'squadron' : 'brigade',
+        taskId: task.id,
+        taskNo: task.taskNo,
+        taskTitle: task.title,
+        title: '申请回退修改已获上级核准',
+        content: `${currentRole.unitName} 已核准同意您就指令【${task.taskNo}】提交的退回修改申请，责任已解除。`,
+        urgency: task.urgency,
+        timestamp: nowStr,
+        isRead: false,
+        isDismissedFromToast: false,
+        actionType: 'VIEW_TASK',
+      });
+    }
+  };
+
+  // 执行发令上级主动退回修改 (下级已签收，直接召回修改更正)
+  const handleConfirmUpperDirectReturn = () => {
+    if (!upperDirectReturnModalTask || !onUpdateTask) return;
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const reasonFull = `${upperDirectReturnPreset}${upperDirectReturnDetail.trim() ? `：${upperDirectReturnDetail.trim()}` : ''}`;
+
+    const updatedTask: DispatchTask = {
+      ...upperDirectReturnModalTask,
+      overallStatus: 'RETURNED_DRAFT',
+      returnRequest: {
+        requestedByUnitId: currentRole.unitId,
+        requestedByUnitName: currentRole.unitName,
+        requestedByName: `${currentRole.userName} (${currentRole.policeNo})`,
+        requestedTime: nowStr,
+        reason: `上级主动退回修改：${reasonFull}`,
+        status: 'CONFIRMED',
+        confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
+        confirmedTime: nowStr,
+        confirmRemarks: '发令上级在下级签收后主动发起召回退回修改，系统已清空下级处置待办。',
+      },
+      executionNodes: [], // 彻底清空执行节点，下级中队/大队的待办彻底移除，不计入下级考核与超时
+      actionLogs: [
+        ...upperDirectReturnModalTask.actionLogs,
+        {
+          id: `log-upper-ret-${Date.now()}`,
+          timestamp: nowStr,
+          operatorName: currentRole.userName,
+          operatorUnit: currentRole.unitName,
+          action: '上级主动退回修改',
+          details: `由发令上级 ${currentRole.unitName} (${currentRole.userName}) 在下级已签收状态下主动发起退回修改。召回原因：【${reasonFull}】。系统已自动撤销下级各责任节点的执行待办与时效考核，工单返回【已退回·待更正重发】列表，修改后可一键重新下发。`,
+        },
+      ],
+    };
+
+    onUpdateTask(updatedTask);
+
+    if (onAddNotice) {
+      upperDirectReturnModalTask.executionNodes.forEach((node) => {
+        onAddNotice({
+          id: `notice-upper-ret-${Date.now()}-${node.unitId}`,
+          type: 'UPPER_DIRECT_RETURN',
+          targetUnitId: node.unitId,
+          targetUnitName: node.unitName,
+          targetLevel: node.unitLevel,
+          taskId: upperDirectReturnModalTask.id,
+          taskNo: upperDirectReturnModalTask.taskNo,
+          taskTitle: upperDirectReturnModalTask.title,
+          title: '上级主动退回修改提醒 (任务召回)',
+          content: `${currentRole.unitName} 已对指令【${upperDirectReturnModalTask.taskNo}】发起主动退回修改召回，已签收待办已同步清空。理由：${reasonFull}`,
+          urgency: upperDirectReturnModalTask.urgency,
+          timestamp: nowStr,
+          isRead: false,
+          isDismissedFromToast: false,
+          actionType: 'VIEW_TASK',
+        });
+      });
+    }
+
+    setUpperDirectReturnModalTask(null);
+    setUpperDirectReturnDetail('');
   };
 
   // 大队再下发中队
@@ -553,6 +706,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             const canCancel = canPerformCancelError(task);
             const canApplyRet = canApplyReturn(task);
             const canUpperConfirm = canUpperConfirmReturn(task);
+            const canDirectReturn = canDirectUpperReturn(task);
 
             // 大队是否可以“再下发中队”
             const canBrigadeDispatchDown =
@@ -785,6 +939,22 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>申请退回修改</span>
+                        </button>
+                      )}
+
+                      {/* 上级在下级已签收但未反馈时，可直接发起退回修改 */}
+                      {canDirectReturn && (
+                        <button
+                          onClick={() => {
+                            setUpperDirectReturnModalTask(task);
+                            setUpperDirectReturnPreset('发现下发目标车辆或信息录入有误');
+                            setUpperDirectReturnDetail('');
+                          }}
+                          className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-medium transition text-xs border border-amber-300 shadow-2xs active:scale-95 cursor-pointer"
+                          title="下级已签收，发令上级可直接发起退回修改，自动清空下级待办"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                          <span>退回修改</span>
                         </button>
                       )}
 
@@ -1073,6 +1243,86 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                 className="px-4 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-semibold shadow-xs"
               >
                 确认下发中队
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 弹窗 4：上级主动退回修改确认 (下级已签收) */}
+      {upperDirectReturnModalTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center space-x-2 text-amber-700">
+                <RotateCcw className="w-5 h-5" />
+                <h3 className="text-sm font-bold">上级主动退回修改确认（已签收召回）</h3>
+              </div>
+              <button
+                onClick={() => setUpperDirectReturnModalTask(null)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-3">
+              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
+                <div>指令编号：<strong className="font-mono">{upperDirectReturnModalTask.taskNo}</strong></div>
+                <div>指令标题：<strong>{upperDirectReturnModalTask.title}</strong></div>
+                <div className="text-[11px] text-amber-800 leading-relaxed pt-1.5 border-t border-amber-200/60">
+                  ⚠️ <strong>业务机制说明：</strong>经系统检测，当前下级责任单位<strong>已签收</strong>本指令。
+                  发令上级可在下级完成最终反馈前，主动发起<strong>召回退回修改</strong>。
+                  确认后，系统将<strong>自动撤销下级单位的处置待办</strong>，不计入下级考核及超时时效；
+                  工单直接返回您的<strong>【已退回·待更正重发】</strong>池，修改后可一键重新下发。
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  退回修改原因 <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={upperDirectReturnPreset}
+                  onChange={(e) => setUpperDirectReturnPreset(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
+                >
+                  <option value="发现下发目标车辆或信息录入有误">发现下发目标车辆或信息录入有误</option>
+                  <option value="研判核查无需继续路面拦截处置">研判核查无需继续路面拦截处置</option>
+                  <option value="责任管辖辖区指派需纠偏更正">责任管辖辖区指派需纠偏更正</option>
+                  <option value="指令处置要求与时限要素调整">指令处置要求与时限要素调整</option>
+                  <option value="其他情况发令上级主动召回">其他情况发令上级主动召回</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  更正说明与修改备注（选填）
+                </label>
+                <textarea
+                  rows={3}
+                  value={upperDirectReturnDetail}
+                  onChange={(e) => setUpperDirectReturnDetail(e.target.value)}
+                  placeholder="请输入需要修改的要点，便于重发时对齐核对..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setUpperDirectReturnModalTask(null)}
+                className="px-3 py-1.5 rounded border border-slate-200 text-xs text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUpperDirectReturn}
+                className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+              >
+                确认退回修改
               </button>
             </div>
           </div>

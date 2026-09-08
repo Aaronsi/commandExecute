@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { 
   DispatchTask, PlateType, CompletionRule, UserRoleContext, 
-  TaskCategory, FeedbackElementConfig, TaskAttachment 
+  TaskCategory, FeedbackElementConfig, TaskAttachment, SystemNotice 
 } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 
@@ -16,6 +16,7 @@ interface TaskCreationModalProps {
   currentRole: UserRoleContext;
   onCreateTask: (task: DispatchTask) => void;
   initialTask?: DispatchTask | null;
+  onAddNotice?: (notice: SystemNotice) => void;
 }
 
 const PLATE_TYPES: PlateType[] = [
@@ -140,6 +141,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
   currentRole,
   onCreateTask,
   initialTask,
+  onAddNotice,
 }) => {
   const isEditing = Boolean(initialTask);
   const [title, setTitle] = useState(initialTask?.title || '');
@@ -463,6 +465,30 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
     };
 
     onCreateTask(newTask);
+
+    if (onAddNotice) {
+      newTask.executionNodes.forEach((node) => {
+        onAddNotice({
+          id: `notice-disp-${Date.now()}-${node.unitId}`,
+          type: 'DISPATCH_NEW',
+          targetUnitId: node.unitId,
+          targetUnitName: node.unitName,
+          targetLevel: node.unitLevel,
+          taskId: newTask.id,
+          taskNo: newTask.taskNo,
+          taskTitle: newTask.title,
+          title: currentRole.level === 'branch' ? '支队下发重点查控指令待签收' : '大队下发重点车辆查处指令待签收',
+          content: `${currentRole.unitName} 向 ${node.unitName} 下发了任务指令【${newTask.taskNo}】，请在规定时限内完成签收并落实查缉。`,
+          urgency: newTask.urgency,
+          timestamp: '刚刚',
+          isRead: false,
+          isDismissedFromToast: false,
+          actionTab: 'PENDING_SIGN',
+          actionType: 'GOTO_TODO',
+        });
+      });
+    }
+
     onClose();
   };
 
