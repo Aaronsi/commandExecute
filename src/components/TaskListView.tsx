@@ -7,6 +7,7 @@ import {
 import { DispatchTask, CompletionRule, UserRoleContext, TaskCategory, OrgUnit, SystemNotice } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 import { Pagination } from './Pagination';
+import { DirectiveFirstLineBadges } from './DirectiveFirstLineBadges';
 
 interface TaskListViewProps {
   tasks: DispatchTask[];
@@ -535,50 +536,50 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
         </div>
 
         {/* 条件栅格 */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* 1. 指令编号 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">指令编号</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">指令编号：</label>
             <input
               type="text"
               value={taskNoFilter}
               onChange={(e) => setTaskNoFilter(e.target.value)}
               placeholder="如：ZD-20260901-001"
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             />
           </div>
 
           {/* 2. 指令标题 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">指令标题</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">指令标题：</label>
             <input
               type="text"
               value={titleFilter}
               onChange={(e) => setTitleFilter(e.target.value)}
-              placeholder="请输入指令标题关键词..."
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              placeholder="请输入标题关键词..."
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             />
           </div>
 
           {/* 3. 车辆号牌 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">车辆号牌</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">车辆号牌：</label>
             <input
               type="text"
               value={plateNoFilter}
               onChange={(e) => setPlateNoFilter(e.target.value)}
               placeholder="如：浙A9988G"
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 font-mono transition uppercase"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 font-mono transition uppercase"
             />
           </div>
 
           {/* 4. 指令业务类别 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">指令业务类别</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">业务类别：</label>
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             >
               <option value="ALL">全部业务类别</option>
               {categories.map((c) => (
@@ -590,12 +591,12 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           </div>
 
           {/* 5. 责任单位 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">责任下发单位</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">责任单位：</label>
             <select
               value={targetUnitFilter}
               onChange={(e) => setTargetUnitFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             >
               <option value="ALL">全部单位</option>
               <optgroup label="直属各大队">
@@ -616,12 +617,12 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           </div>
 
           {/* 6. 完成判定规则 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">完成判定规则</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">判定规则：</label>
             <select
               value={ruleFilter}
               onChange={(e) => setRuleFilter(e.target.value as any)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             >
               <option value="ALL">全部规则</option>
               <option value="ANY_COMPLETE">任一完成 (ANY_COMPLETE)</option>
@@ -630,12 +631,12 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           </div>
 
           {/* 7. 紧急程度 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">紧急程度</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">紧急程度：</label>
             <select
               value={urgencyFilter}
               onChange={(e) => setUrgencyFilter(e.target.value as any)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             >
               <option value="ALL">全部紧急度</option>
               <option value="特急">特急 (红)</option>
@@ -645,12 +646,12 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
           </div>
 
           {/* 8. 指令状态 */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-600 mb-1">指令流转状态</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-slate-700 whitespace-nowrap min-w-[76px] text-right">流转状态：</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
+              className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-blue-500 transition"
             >
               <option value="ALL">全部状态</option>
               <option value="PROCESSING">流转中</option>
@@ -718,12 +719,13 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
             return (
               <div
                 key={task.id}
-                className={`p-4 rounded-lg border transition-all duration-150 shadow-xs ${
+                onClick={() => onSelectTask(task)}
+                className={`p-4 rounded-lg border transition-all duration-150 shadow-xs cursor-pointer ${
                   isCancelled
                     ? 'bg-slate-50/80 border-slate-200 opacity-80'
                     : isReturnedDraft
-                    ? 'bg-amber-50/30 border-amber-200'
-                    : 'bg-white border-slate-200 hover:border-blue-300'
+                    ? 'bg-amber-50/30 border-amber-200 hover:border-amber-400'
+                    : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-md'
                 }`}
               >
                 {/* 状态横幅预警 (如已撤销、退单协商等) */}
@@ -781,63 +783,7 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   {/* Left Task Meta */}
                   <div className="space-y-2 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                        {task.taskNo}
-                      </span>
-
-                      {/* Category Badge */}
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                        {task.category}
-                      </span>
-
-                      {/* Urgency */}
-                      <span
-                        className={`text-xs font-semibold px-2 py-0.5 rounded border ${
-                          task.urgency === '特急'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : task.urgency === '紧急'
-                            ? 'bg-orange-50 text-orange-700 border-orange-200'
-                            : 'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        {task.urgency}
-                      </span>
-
-                      {/* Rule */}
-                      <span
-                        className={`text-xs font-semibold px-2 py-0.5 rounded border flex items-center gap-1 ${
-                          task.completionRule === 'ANY_COMPLETE'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                        }`}
-                      >
-                        <GitBranch className="w-3 h-3" />
-                        <span>{task.completionRule === 'ANY_COMPLETE' ? '任一完成' : '全部完成'}</span>
-                      </span>
-
-                      {/* Global Status Badge */}
-                      {isCancelled ? (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1">
-                          <Ban className="w-3 h-3 text-slate-600" />
-                          <span>派件错误·已撤销</span>
-                        </span>
-                      ) : isReturnedDraft ? (
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                          <RotateCcw className="w-3 h-3 text-amber-700" />
-                          <span>已退回·待更正重发</span>
-                        </span>
-                      ) : isCompleted ? (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>已完结</span>
-                        </span>
-                      ) : (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                          流转中
-                        </span>
-                      )}
-                    </div>
+                    <DirectiveFirstLineBadges task={task} />
 
                     <h3 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
                       {task.title}
@@ -897,7 +843,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                     <div className="flex flex-wrap items-center gap-1.5 pt-1">
                       {/* 1. 查看详情 */}
                       <button
-                        onClick={() => onSelectTask(task)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectTask(task);
+                        }}
                         className="flex items-center space-x-1 px-3 py-1.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium transition text-xs border border-blue-200 shadow-2xs"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -907,7 +856,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 2. 未签收撤销 (错件撤销) */}
                       {canCancel && (
                         <button
-                          onClick={() => setCancelModalTask(task)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCancelModalTask(task);
+                          }}
                           className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-medium transition text-xs border border-rose-200 shadow-2xs"
                           title="下级尚未签收，上级可直接作废该错件"
                         >
@@ -919,7 +871,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 3. 大队再下发中队 */}
                       {canBrigadeDispatchDown && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setDispatchDownTask(task);
                             setSelectedSquadronIds([]);
                           }}
@@ -933,7 +886,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 4. 下级申请退回修改 */}
                       {canApplyRet && (
                         <button
-                          onClick={() => setReturnRequestModalTask(task)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReturnRequestModalTask(task);
+                          }}
                           className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-medium transition text-xs border border-amber-200 shadow-2xs"
                           title="发现派发错辖区或信息有误，申请退回上级修改"
                         >
@@ -945,7 +901,8 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 上级在下级已签收但未反馈时，可直接发起退回修改 */}
                       {canDirectReturn && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setUpperDirectReturnModalTask(task);
                             setUpperDirectReturnPreset('发现下发目标车辆或信息录入有误');
                             setUpperDirectReturnDetail('');
@@ -961,7 +918,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 5. 上级确认同意退回 */}
                       {hasReturnPending && canUpperConfirm && (
                         <button
-                          onClick={() => handleUpperApproveReturn(task)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUpperApproveReturn(task);
+                          }}
                           className="flex items-center space-x-1 px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition text-xs shadow-2xs"
                           title="确认下级的退回申请，让工单返回待更正重发池"
                         >
@@ -973,7 +933,10 @@ export const TaskListView: React.FC<TaskListViewProps> = ({
                       {/* 6. 更正并重新下发 */}
                       {isReturnedDraft && (task.creatorUnitId === currentRole.unitId || currentRole.level === 'branch') && (
                         <button
-                          onClick={() => onReDispatchTask && onReDispatchTask(task)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onReDispatchTask && onReDispatchTask(task);
+                          }}
                           className="flex items-center space-x-1 px-3 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white font-semibold transition text-xs shadow-xs active:scale-95"
                         >
                           <Send className="w-3.5 h-3.5" />

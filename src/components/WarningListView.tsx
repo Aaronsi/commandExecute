@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { DispatchTask } from '../types';
 import { Pagination } from './Pagination';
+import { DirectiveFirstLineBadges } from './DirectiveFirstLineBadges';
 
 interface WarningListViewProps {
   tasks: DispatchTask[];
@@ -275,6 +276,9 @@ export const WarningListView: React.FC<WarningListViewProps> = ({
     // 合并并按 id 去重
     const mergedMap = new Map<string, WarningItem>();
     [...list, ...baselineMock].forEach((item) => {
+      if (!item.taskRef) {
+        item.taskRef = tasks.find((t) => t.taskNo === item.taskNo) || tasks[0] || null;
+      }
       mergedMap.set(item.id, item);
     });
 
@@ -392,58 +396,80 @@ export const WarningListView: React.FC<WarningListViewProps> = ({
               <p className="text-xs text-slate-500">所有指令均在合理时效与流程标准内正常运转。</p>
             </div>
           ) : (
-            paginatedWarnings.map((warn) => (
-              <div
-                key={warn.id}
-                className="bg-white rounded-xl border border-slate-200 hover:border-rose-300 p-4 sm:p-5 shadow-2xs hover:shadow-md transition space-y-3"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-2.5 py-0.5 rounded text-xs font-bold border ${warn.typeBadge}`}>
-                      {warn.typeName}
-                    </span>
-                    <span className="font-mono text-xs text-slate-500 font-semibold">{warn.taskNo}</span>
-                    <span className="text-xs text-slate-300">·</span>
-                    <span className="text-xs font-medium text-slate-700 flex items-center gap-1">
-                      <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                      <span>责任单位：{warn.unitName}</span>
-                    </span>
+            paginatedWarnings.map((warn) => {
+              const effectiveTask = warn.taskRef || tasks.find((t) => t.taskNo === warn.taskNo) || {
+                taskNo: warn.taskNo,
+                directiveType: 'VEHICLE',
+                category: '车辆缉查',
+                urgency: warn.severity === 'HIGH' ? '特急' : warn.severity === 'MEDIUM' ? '紧急' : '常规',
+                completionRule: 'ALL_COMPLETE',
+                overallStatus: 'PROCESSING',
+              };
+
+              return (
+                <div
+                  key={warn.id}
+                  onClick={() => {
+                    const targetTask = warn.taskRef || tasks.find((t) => t.taskNo === warn.taskNo) || (effectiveTask as DispatchTask);
+                    if (targetTask) onSelectTask(targetTask as DispatchTask);
+                  }}
+                  className="bg-white rounded-xl border border-slate-200 hover:border-rose-400 p-4 sm:p-5 shadow-2xs hover:shadow-md transition space-y-3 cursor-pointer"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* 统一指令第一行：指令唯一编号 指令类别 业务类别 紧急程度 判定规则 流转状态 */}
+                      <DirectiveFirstLineBadges task={effectiveTask} />
+
+                      <span className="text-slate-300">·</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-bold border ${warn.typeBadge} flex items-center gap-1`}>
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>{warn.typeName}</span>
+                      </span>
+                      <span className="text-xs font-medium text-slate-700 flex items-center gap-1">
+                        <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                        <span>责任单位：{warn.unitName}</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded">
+                        {warn.duration}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs font-mono font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded">
-                      {warn.duration}
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-slate-900">{warn.title}</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">{warn.desc}</p>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => handleSupervise(warn, e)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition flex items-center space-x-1 cursor-pointer"
+                      >
+                        <BellRing className="w-3.5 h-3.5" />
+                        <span>一键督办提醒</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const targetTask = warn.taskRef || tasks.find((t) => t.taskNo === warn.taskNo) || (effectiveTask as DispatchTask);
+                          if (targetTask) onSelectTask(targetTask as DispatchTask);
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition flex items-center space-x-1 cursor-pointer"
+                      >
+                        <span>工单详情</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <h3 className="text-sm font-bold text-slate-900">{warn.title}</h3>
-                    <p className="text-xs text-slate-500 leading-relaxed">{warn.desc}</p>
-                  </div>
-
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => handleSupervise(warn, e)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition flex items-center space-x-1 cursor-pointer"
-                    >
-                      <BellRing className="w-3.5 h-3.5" />
-                      <span>一键督办提醒</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => warn.taskRef && onSelectTask(warn.taskRef)}
-                      className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition flex items-center space-x-1 cursor-pointer"
-                    >
-                      <span>工单详情</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

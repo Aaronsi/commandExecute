@@ -5,11 +5,9 @@ import {
   Paperclip, Download, Tag, FileCheck, ExternalLink, Printer, Stamp, Filter, RefreshCw, Eye, Building2,
   RotateCcw, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord, SystemNotice } from '../types';
+import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, PlateType, ThirdPartyDisposalRecord, SystemNotice, TaskAttachment } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 import { VehicleEvidenceModal } from './VehicleEvidenceModal';
-import { AuditDialog } from './AuditDialog';
-import { VehicleInterceptionDialog } from './VehicleInterceptionDialog';
 
 interface TaskDetailModalProps {
   isOpen: boolean;
@@ -49,41 +47,47 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   // Evidence preview modal state
   const [previewEvidenceVehicle, setPreviewEvidenceVehicle] = useState<TaskVehicle | null>(null);
 
-  // 逐车审核弹窗状态 (大队初审 / 支队终审)
-  const [auditVehicle, setAuditVehicle] = useState<TaskVehicle | null>(null);
+  // Attachment preview modal state (Requirement 1: 指令创建时的附件查看)
+  const [previewAttachment, setPreviewAttachment] = useState<TaskAttachment | null>(null);
 
-  // 逐车填报/重报弹窗状态
-  const [feedbackVehicle, setFeedbackVehicle] = useState<TaskVehicle | null>(null);
-
-  // 上级主动退回修改确认弹窗状态 (下级已签收但未反馈)
-  const [showUpperReturnModal, setShowUpperReturnModal] = useState(false);
-  const [upperReturnPreset, setUpperReturnPreset] = useState('发现下发目标车辆或信息录入有误');
-  const [upperReturnDetail, setUpperReturnDetail] = useState('');
-
-  // 判断发令上级是否可直接发起“退回修改” (下级已签收但未反馈/未完结)
-  const canDirectUpperReturn = useMemo(() => {
-    if (task.overallStatus !== 'PROCESSING') return false;
-    const isCreator = task.creatorUnitId === currentRole.unitId || currentRole.level === 'branch';
-    if (!isCreator) return false;
-    const hasSigned = task.executionNodes.some(
-      (n) => n.status === 'SIGNED' || n.status === 'DISPATCHED_DOWN' || n.status === 'FEEDBACK_SUBMITTED'
-    );
-    const isAllPassed = task.vehicles.length > 0 && task.vehicles.every((v) => v.vehicleAuditStatus === 'PASSED');
-    return hasSigned && !isAllPassed;
-  }, [task, currentRole]);
+  // Text directive feedback detail modal state (Requirement 3: 反馈内容详细查看)
+  const [selectedFeedbackNode, setSelectedFeedbackNode] = useState<TaskExecutionNode | null>(null);
 
   if (!isOpen) return null;
 
   // Identify current logged in unit's node
   const myNode = task.executionNodes.find((n) => n.unitId === currentRole.unitId);
 
-  // Helper to re-evaluate overall task completion based on vehicles approved by final audit authority
+  // Helper to re-evaluate overall task completion based on vehicles approved by final audit authority or text reports approved
   const evaluateOverallCompletion = (currentTask: DispatchTask): { 
     isCompleted: boolean; 
     summary: string;
     passedVehiclesCount: number;
     totalVehiclesCount: number;
   } => {
+    if (currentTask.directiveType === 'TEXT') {
+      // For text directives, check reporting nodes (squadrons or direct brigades)
+      const leafNodes = currentTask.executionNodes.filter((n) => 
+        n.unitLevel === 'squadron' || (n.unitLevel === 'brigade' && (!n.dispatchedToSquadronIds || n.dispatchedToSquadronIds.length === 0))
+      );
+      const totalUnitsCount = leafNodes.length;
+      const passedUnitsCount = leafNodes.filter((n) => 
+        n.status === 'AUDITED_PASS' || 
+        n.status === 'OVERALL_COMPLETED' || 
+        n.branchAudit?.result === 'PASS' || 
+        (currentTask.creatorLevel === 'brigade' && n.brigadeAudit?.result === 'PASS')
+      ).length;
+      const isCompleted = passedUnitsCount === totalUnitsCount && totalUnitsCount > 0;
+      return {
+        isCompleted,
+        passedVehiclesCount: passedUnitsCount,
+        totalVehiclesCount: totalUnitsCount,
+        summary: isCompleted
+          ? `【文本指令模式】：全部 ${totalUnitsCount} 家责任单位处置报告均已终审通过，指令已全量闭环结案！`
+          : `【文本指令模式】：已终审通过 ${passedUnitsCount} / ${totalUnitsCount} 家责任单位处置报告`,
+      };
+    }
+
     const { completionRule, vehicles } = currentTask;
     const totalVehiclesCount = vehicles.length;
     
@@ -114,247 +118,6 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
   };
 
   const evalStatus = evaluateOverallCompletion(task);
-
-  // 执行发令上级主动退回修改 (召回更正)
-  const handleConfirmDirectReturn = () => {
-    if (!onUpdateTask) return;
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-    const reasonFull = `${upperReturnPreset}${upperReturnDetail.trim() ? `：${upperReturnDetail.trim()}` : ''}`;
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      overallStatus: 'RETURNED_DRAFT',
-      returnRequest: {
-        requestedByUnitId: currentRole.unitId,
-        requestedByUnitName: currentRole.unitName,
-        requestedByName: `${currentRole.userName} (${currentRole.policeNo})`,
-        requestedTime: nowStr,
-        reason: `上级主动退回更正：${reasonFull}`,
-        status: 'CONFIRMED',
-        confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
-        confirmedTime: nowStr,
-        confirmRemarks: '发令上级在指令详情中主动发起召回更正，下级待办清空释放。',
-      },
-      executionNodes: [], // 彻底清空执行节点，下级待办彻底注销
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-upper-ret-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '上级主动退回修改',
-          details: `由发令上级 ${currentRole.unitName} (${currentRole.userName}) 在下级已签收状态下主动发起退回修改。召回原因：【${reasonFull}】。系统已自动撤销下级各节点的待办任务与时效考核，工单返回【已退回·待更正重发】。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-
-    // 触发系统消息提醒（推送给所有被召回的下级大队/中队）
-    if (onAddNotice) {
-      task.executionNodes.forEach((node) => {
-        onAddNotice({
-          id: `notice-upper-ret-${Date.now()}-${node.unitId}`,
-          type: 'UPPER_DIRECT_RETURN',
-          targetUnitId: node.unitId,
-          targetUnitName: node.unitName,
-          targetLevel: node.unitLevel,
-          taskId: task.id,
-          taskNo: task.taskNo,
-          taskTitle: task.title,
-          title: '上级主动退回修改提醒 (任务召回)',
-          content: `${currentRole.unitName} 已对指令【${task.taskNo}】发起主动退回更正，贵单位待办已同步注销释放，不计入考核。原因：${reasonFull}`,
-          urgency: task.urgency,
-          timestamp: nowStr,
-          isRead: false,
-          isDismissedFromToast: false,
-          actionType: 'VIEW_TASK',
-        });
-      });
-    }
-
-    setShowUpperReturnModal(false);
-    onClose();
-  };
-
-  // 逐车审核提交处理 (初审/终审)
-  const handleAuditSubmit = (data: {
-    result: 'PASS' | 'REJECT';
-    remarks: string;
-    rejectReason?: string;
-  }) => {
-    if (!auditVehicle || !onUpdateTask) return;
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    const isBranch = currentRole.level === 'branch';
-    const isReject = data.result === 'REJECT';
-
-    const updatedVehicles = task.vehicles.map((v) => {
-      if (v.id === auditVehicle.id) {
-        if (isReject) {
-          return {
-            ...v,
-            vehicleAuditStatus: 'REJECTED' as const,
-            rejectReason: data.remarks,
-          };
-        } else {
-          return {
-            ...v,
-            vehicleAuditStatus: (isBranch ? 'PASSED' : 'BRIGADE_PASSED') as 'PASSED' | 'BRIGADE_PASSED',
-            brigadeAuditRemarks: !isBranch ? data.remarks : v.brigadeAuditRemarks,
-            branchAuditRemarks: isBranch ? data.remarks : v.branchAuditRemarks,
-          };
-        }
-      }
-      return v;
-    });
-
-    const isNowAllPassed =
-      task.completionRule === 'ANY_COMPLETE'
-        ? updatedVehicles.some((v) => v.vehicleAuditStatus === 'PASSED')
-        : updatedVehicles.every((v) => v.vehicleAuditStatus === 'PASSED');
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      vehicles: updatedVehicles,
-      overallStatus: isNowAllPassed ? 'COMPLETED' : task.overallStatus,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-audit-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: isReject
-            ? (isBranch ? '支队终审驳回' : '大队初审驳回')
-            : (isBranch ? '支队终审通过' : '大队初审通过'),
-          details: `${currentRole.unitName} 对车辆【${auditVehicle.plateNo}】进行了审核（${
-            isReject ? '驳回整改' : '审核通过'
-          }）。意见：【${data.remarks}】。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-
-    // 驳回时触发系统消息提醒通知责任下级
-    if (isReject && onAddNotice) {
-      const targetUnitId = auditVehicle.interceptedByUnitId || (isBranch ? 'brigade-01' : 'squadron-01-01');
-      const targetUnitName = auditVehicle.interceptedByUnitName || (isBranch ? '直属一大队' : '城东一中队');
-      const targetLevel = targetUnitId.startsWith('squadron') ? 'squadron' : 'brigade';
-
-      onAddNotice({
-        id: `notice-rej-${Date.now()}`,
-        type: 'AUDIT_REJECTED',
-        targetUnitId,
-        targetUnitName,
-        targetLevel,
-        taskId: task.id,
-        taskNo: task.taskNo,
-        taskTitle: task.title,
-        title: isBranch ? '支队审核提交反馈车辆不通过' : '大队初审驳回车辆处置反馈待整改',
-        content: `${currentRole.unitName} 审核驳回了车辆【${auditVehicle.plateNo}】的处置凭证：${data.remarks}。请及时在我的待办中补齐重报。`,
-        urgency: task.urgency,
-        timestamp: nowStr,
-        isRead: false,
-        isDismissedFromToast: false,
-        actionTab: targetLevel === 'squadron' ? 'REJECTED_FIX' : 'PENDING_FEEDBACK',
-        actionType: 'GOTO_TODO',
-      });
-    }
-
-    setAuditVehicle(null);
-  };
-
-  // 逐车反馈提交处理
-  const handleFeedbackSubmit = (data: {
-    vehicleId: string;
-    plateNo: string;
-    plateType: PlateType;
-    disposalRecord: ThirdPartyDisposalRecord;
-    feedbackRemarks: string;
-    location: string;
-    evidenceImages?: string[];
-    dynamicFeedbackValues?: Record<string, any>;
-  }) => {
-    if (!onUpdateTask) return;
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    const updatedVehicles = task.vehicles.map((v) => {
-      if (v.id === data.vehicleId) {
-        return {
-          ...v,
-          isIntercepted: true,
-          interceptedByUnitId: currentRole.unitId,
-          interceptedByUnitName: currentRole.unitName,
-          interceptedTime: nowStr,
-          disposalRecord: data.disposalRecord,
-          feedbackRemarks: data.feedbackRemarks,
-          vehicleAuditStatus: 'PENDING' as const,
-          rejectReason: undefined,
-        };
-      }
-      return v;
-    });
-
-    const updatedNodes = task.executionNodes.map((n) => {
-      if (n.unitId === currentRole.unitId) {
-        return {
-          ...n,
-          status: 'FEEDBACK_SUBMITTED' as const,
-          feedbackSummary: `已处置查扣车辆【${data.plateNo}】，凭证号：${data.disposalRecord.punishmentCode}`,
-          feedbackTime: nowStr,
-        };
-      }
-      return n;
-    });
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      vehicles: updatedVehicles,
-      executionNodes: updatedNodes,
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-fb-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '填报车辆处置凭证',
-          details: `${currentRole.unitName} 民警完成了车辆【${data.plateNo}】的现场处置并录入凭证【${data.disposalRecord.punishmentCode}】。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-
-    if (onAddNotice && currentRole.level === 'squadron') {
-      const parentUnit = MOCK_ORG_UNITS.find((u) => u.id === currentRole.unitId);
-      const targetBrigadeId = parentUnit?.parentId || 'brigade-01';
-      const targetBrigade = MOCK_ORG_UNITS.find((u) => u.id === targetBrigadeId);
-      onAddNotice({
-        id: `notice-sq-fb-${Date.now()}`,
-        type: 'SQUADRON_FEEDBACK_SUBMITTED',
-        targetUnitId: targetBrigadeId,
-        targetUnitName: targetBrigade?.name || '直属一大队',
-        targetLevel: 'brigade',
-        taskId: task.id,
-        taskNo: task.taskNo,
-        taskTitle: task.title,
-        title: '中队提交处置凭证待大队初审',
-        content: `${currentRole.unitName} 已对指令【${task.taskNo}】目标车辆【${data.plateNo}】完成查扣并录入凭证（${data.disposalRecord.punishmentCode}），待大队指挥员初审报送。`,
-        urgency: task.urgency,
-        timestamp: '刚刚',
-        isRead: false,
-        isDismissedFromToast: false,
-        actionTab: 'BRIGADE_AUDIT',
-        actionType: 'GOTO_TODO',
-      });
-    }
-
-    setFeedbackVehicle(null);
-  };
 
   // Group brigade and squadron nodes for topology view
   const brigadeNodes = task.executionNodes.filter((n) => n.unitLevel === 'brigade');
@@ -428,9 +191,37 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
     });
   }, [task.vehicles, selectedDeptFilter, currentRole.level]);
 
+  // Filtered reporting text nodes for Text Directive (Requirement 3: 处置反馈清单)
+  const filteredReportingNodes = useMemo(() => {
+    // Reporting units are squadrons, or brigades that do not dispatch to squadrons (direct handling)
+    const directNodes = task.executionNodes.filter((n) => {
+      if (n.unitLevel === 'squadron') return true;
+      if (n.unitLevel === 'brigade') {
+        return !n.dispatchedToSquadronIds || n.dispatchedToSquadronIds.length === 0;
+      }
+      return false;
+    });
+
+    if (selectedDeptFilter === 'ALL') {
+      if (currentRole.level === 'squadron') {
+        return directNodes.filter(n => n.unitId === currentRole.unitId);
+      }
+      if (currentRole.level === 'brigade') {
+        return directNodes.filter(n => n.unitId === currentRole.unitId || n.parentId === myNode?.id);
+      }
+      return directNodes;
+    }
+
+    return directNodes.filter(n => n.unitId === selectedDeptFilter || n.parentId === selectedDeptFilter);
+  }, [task.executionNodes, selectedDeptFilter, currentRole, myNode]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white border border-slate-200 rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden my-4 flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/40 backdrop-blur-xs flex justify-end">
+      {/* Drawer background backdrop click to close */}
+      <div className="absolute inset-0 cursor-pointer" onClick={onClose} />
+
+      {/* Drawer Panel Sliding from Right */}
+      <div className="relative bg-white border-l border-slate-200 w-full max-w-5xl h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-right duration-300">
         {/* Top Header */}
         <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-start justify-between shrink-0">
           <div className="space-y-1.5">
@@ -466,6 +257,16 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 <span>{task.completionRule === 'ANY_COMPLETE' ? '任一完成模式' : '全部完成模式'}</span>
               </span>
 
+              {/* Directive Type Badge */}
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                task.directiveType === 'TEXT'
+                  ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                  : 'bg-slate-100 text-slate-800 border-slate-200'
+              }`}>
+                {task.directiveType === 'TEXT' ? <FileText className="w-3 h-3 text-indigo-600" /> : <Car className="w-3 h-3 text-slate-600" />}
+                <span>{task.directiveType === 'TEXT' ? '文本指令 (免车辆)' : '按车反馈指令'}</span>
+              </span>
+
               {task.overallStatus === 'CANCELLED_ERROR' ? (
                 <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
                   <XCircle className="w-3.5 h-3.5 text-rose-600" />
@@ -497,6 +298,32 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
               <div>下发时间：<span className="font-mono text-slate-700">{task.dispatchTime}</span></div>
               <div>截止时限：<span className="font-mono text-amber-700 font-medium">{task.deadline}</span></div>
             </div>
+
+            {/* Directive Creation Attachments (Requirement 1: 指令创建时的附件查看) */}
+            {task.attachments && task.attachments.length > 0 && (
+              <div className="mt-2.5 pt-2 border-t border-slate-200/80 flex flex-wrap items-center gap-2">
+                <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1 shrink-0">
+                  <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+                  <span>指令创建附件 ({task.attachments.length})：</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {task.attachments.map((att) => (
+                    <button
+                      key={att.id}
+                      type="button"
+                      onClick={() => setPreviewAttachment(att)}
+                      className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 text-xs transition shadow-2xs group cursor-pointer"
+                      title={`点击查看附件详情与模拟下载：${att.name} (${att.size})`}
+                    >
+                      <FileText className="w-3.5 h-3.5 text-blue-500 group-hover:text-blue-600" />
+                      <span className="font-medium max-w-[220px] truncate">{att.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">({att.size})</span>
+                      <Eye className="w-3 h-3 text-slate-400 group-hover:text-blue-600 ml-0.5" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -550,7 +377,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <span>{evalStatus.summary}</span>
           </div>
           <div className="flex items-center space-x-3 text-[11px] font-mono">
-            <span>终审通过数：<strong className="text-blue-700">{evalStatus.passedVehiclesCount}</strong> / {evalStatus.totalVehiclesCount} 辆</span>
+            <span>{task.directiveType === 'TEXT' ? '审核通过单位：' : '终审通过数：'}<strong className="text-blue-700">{evalStatus.passedVehiclesCount}</strong> / {evalStatus.totalVehiclesCount} {task.directiveType === 'TEXT' ? '家' : '辆'}</span>
             <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden inline-block align-middle">
               <div 
                 className={`h-full rounded-full transition-all duration-300 ${task.overallStatus === 'COMPLETED' ? 'bg-emerald-600' : 'bg-blue-600'}`}
@@ -572,21 +399,10 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-3">
-            {canDirectUpperReturn && (
-              <button
-                type="button"
-                onClick={() => setShowUpperReturnModal(true)}
-                className="flex items-center space-x-1.5 px-3 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 font-semibold text-xs shadow-2xs transition active:scale-95 cursor-pointer"
-                title="下级已签收但未反馈，发令上级可直接发起退回修改"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                <span>退回修改 (召回更正)</span>
-              </button>
-            )}
             <div className="text-xs text-slate-500 flex items-center space-x-1.5">
-              <span>台账综合详情模式（如需签收、反馈或审核处置，请前往</span>
-              <strong className="text-blue-700">「我的待办」</strong>
-              <span>专区）</span>
+              <span>台账综合详情查看（详情页仅供查阅，签收、反馈或审核处置请前往</span>
+              <strong className="text-blue-700 font-semibold">「我的待办」</strong>
+              <span>专区操作）</span>
             </div>
           </div>
         </div>
@@ -606,7 +422,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
             <span>执行进度与流转跟踪</span>
           </button>
 
-          {/* TAB 2: VEHICLE MATRIX (目标车辆拦截总表 - 含部门筛选) */}
+          {/* TAB 2: VEHICLE MATRIX or DISPOSAL FEEDBACK LIST (Requirement 3) */}
           <button
             onClick={() => setActiveTab('vehicles')}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 ${
@@ -615,8 +431,17 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Car className="w-3.5 h-3.5" />
-            <span>目标车辆处置总表 ({task.vehicles.length})</span>
+            {task.directiveType === 'TEXT' ? (
+              <>
+                <FileText className="w-3.5 h-3.5" />
+                <span>处置反馈清单 ({task.executionNodes.filter(n => n.unitLevel === 'squadron' || (!n.dispatchedToSquadronIds || n.dispatchedToSquadronIds.length === 0)).length})</span>
+              </>
+            ) : (
+              <>
+                <Car className="w-3.5 h-3.5" />
+                <span>目标车辆处置总表 ({task.vehicles.length})</span>
+              </>
+            )}
           </button>
 
           {/* TAB 3: OFFICIAL DOCUMENT */}
@@ -826,8 +651,207 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
           {/* ========================================================================= */}
           {activeTab === 'vehicles' && (
             <div className="space-y-4">
-              {/* Department Filter Bar (支队/大队/中队部门筛选) */}
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {task.directiveType === 'TEXT' ? (
+                /* =================== 文本指令：处置反馈清单 (Requirement 3) =================== */
+                <>
+                  {/* Department Filter Bar */}
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center space-x-2">
+                      <Filter className="w-4 h-4 text-slate-500" />
+                      <span className="text-xs font-bold text-slate-800">处置责任部门筛选：</span>
+                      
+                      {currentRole.level === 'squadron' ? (
+                        <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
+                          {currentRole.unitName} (基层视角锁定)
+                        </span>
+                      ) : (
+                        <select
+                          value={selectedDeptFilter}
+                          onChange={(e) => setSelectedDeptFilter(e.target.value)}
+                          className="bg-white border border-slate-200 text-xs text-slate-800 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium"
+                        >
+                          {availableDeptFilters.map((d) => (
+                            <option key={d.id} value={d.id}>
+                              {d.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
+                    <div className="text-xs text-slate-500 flex items-center space-x-2">
+                      <span>责任单位：<strong className="text-slate-900">{filteredReportingNodes.length}</strong> 家</span>
+                      <span>|</span>
+                      <span>已提交反馈：<strong className="text-purple-700">{filteredReportingNodes.filter(n => n.status === 'FEEDBACK_SUBMITTED' || n.status === 'COMPLETED' || n.brigadeAudit).length}</strong> 家</span>
+                      <span>|</span>
+                      <span>终审通过：<strong className="text-emerald-700">{filteredReportingNodes.filter(n => n.status === 'COMPLETED' || n.branchAudit?.result === 'PASS').length}</strong> 家</span>
+                    </div>
+                  </div>
+
+                  {/* Text Directive Feedback List Table */}
+                  <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-600 font-semibold">
+                          <th className="p-3">处置责任单位 / 处警民警</th>
+                          <th className="p-3">处警时间</th>
+                          <th className="p-3">大队初审</th>
+                          <th className="p-3">支队终审 (办结考核)</th>
+                          <th className="p-3">反馈内容 (简写 · 点击查看完整)</th>
+                          <th className="p-3 text-right">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {filteredReportingNodes.map((node) => {
+                          const isPassBranch = node.branchAudit?.result === 'PASS' || node.status === 'COMPLETED';
+                          const isRejectBranch = node.branchAudit?.result === 'REJECT';
+                          const isPassBrigade = node.brigadeAudit?.result === 'PASS';
+                          const isRejectBrigade = node.brigadeAudit?.result === 'REJECT';
+
+                          return (
+                            <tr key={node.id} className="hover:bg-slate-50/60 transition">
+                              <td className="p-3">
+                                <div className="space-y-0.5">
+                                  <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${node.unitLevel === 'squadron' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
+                                    <span>{node.unitName}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-mono">
+                                    处警民警：{node.feedbackOfficer || (node.signedBy ? `${node.signedBy} (签收)` : '待指派')}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="p-3 font-mono text-[11px]">
+                                {node.feedbackTime ? (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-800 font-medium">{node.feedbackTime}</div>
+                                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 inline-block font-sans">
+                                      ✓ 已上报
+                                    </span>
+                                  </div>
+                                ) : node.signedTime ? (
+                                  <div className="space-y-0.5">
+                                    <div className="text-slate-500">{node.signedTime}</div>
+                                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200 inline-block font-sans">
+                                      已签收·待反馈
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400">待签收</span>
+                                )}
+                              </td>
+
+                              {/* 大队初审 */}
+                              <td className="p-3">
+                                {isPassBrigade ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-emerald-800 bg-emerald-50 font-bold px-2 py-0.5 rounded border border-emerald-200 inline-block">
+                                      初审通过
+                                    </span>
+                                    {node.brigadeAudit?.auditorName && (
+                                      <div className="text-[10px] text-slate-400 font-mono">
+                                        {node.brigadeAudit.auditorName}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : isRejectBrigade ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-rose-800 bg-rose-50 font-bold px-2 py-0.5 rounded border border-rose-200 inline-block">
+                                      初审驳回
+                                    </span>
+                                    {node.brigadeAudit?.opinion && (
+                                      <div className="text-[10px] text-rose-600 truncate max-w-[120px]" title={node.brigadeAudit.opinion}>
+                                        {node.brigadeAudit.opinion}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : node.status === 'FEEDBACK_SUBMITTED' ? (
+                                  <span className="text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 font-medium">
+                                    待大队初审
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+
+                              {/* 支队终审 (办结考核) */}
+                              <td className="p-3">
+                                {isPassBranch ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-emerald-800 bg-emerald-100 font-bold px-2 py-0.5 rounded border border-emerald-300 inline-block">
+                                      ★ 终审通过 (已生效)
+                                    </span>
+                                    {node.branchAudit?.auditorName && (
+                                      <div className="text-[10px] text-slate-400 font-mono">
+                                        {node.branchAudit.auditorName}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : isRejectBranch ? (
+                                  <div className="space-y-0.5">
+                                    <span className="text-rose-800 bg-rose-50 font-bold px-2 py-0.5 rounded border border-rose-200 inline-block">
+                                      终审驳回
+                                    </span>
+                                    {node.branchAudit?.opinion && (
+                                      <div className="text-[10px] text-rose-600 truncate max-w-[120px]" title={node.branchAudit.opinion}>
+                                        {node.branchAudit.opinion}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : isPassBrigade ? (
+                                  <span className="text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 font-medium">
+                                    待支队终审
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </td>
+
+                              {/* 反馈内容 (列表显示简写，点击可以查看详细反馈内容) */}
+                              <td className="p-3 max-w-[280px]">
+                                {node.feedbackText ? (
+                                  <div
+                                    onClick={() => setSelectedFeedbackNode(node)}
+                                    className="cursor-pointer group hover:text-blue-700"
+                                    title="点击查看详细反馈内容与佐证凭证"
+                                  >
+                                    <div className="text-slate-800 group-hover:text-blue-700 transition line-clamp-1 leading-relaxed font-medium">
+                                      {node.feedbackText}
+                                    </div>
+                                    <div className="text-[10px] text-blue-600 group-hover:underline flex items-center gap-1 mt-0.5 font-medium">
+                                      <FileText className="w-3 h-3 text-blue-500" />
+                                      <span>查看详情全文与佐证 ({node.feedbackAttachments?.length || 0})</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic">尚未提交文字报告</span>
+                                )}
+                              </td>
+
+                              {/* 操作 */}
+                              <td className="p-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedFeedbackNode(node)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 text-xs font-medium transition cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>查看详情</span>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                /* =================== 车辆指令：目标车辆处置总表 =================== */
+                <>
+                  {/* Department Filter Bar (支队/大队/中队部门筛选) */}
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center space-x-2">
                   <Filter className="w-4 h-4 text-slate-500" />
                   <span className="text-xs font-bold text-slate-800">处置责任部门筛选：</span>
@@ -872,7 +896,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                       <th className="p-3">处警时间 & 防倒挂校验</th>
                       <th className="p-3">大队初审</th>
                       <th className="p-3">支队终审 (办结考核)</th>
-                      <th className="p-3 text-right">卷宗与凭证操作</th>
+                      <th className="p-3 text-right">处置证据卷宗</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -932,7 +956,7 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                               </span>
                             ) : veh.isIntercepted ? (
                               <span className="text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
-                                待大队审核
+                                待大队初审
                               </span>
                             ) : (
                               <span className="text-slate-400">—</span>
@@ -960,52 +984,18 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
 
                           <td className="p-3 text-right">
                             <div className="flex items-center justify-end space-x-1.5">
-                              {/* 查看卷宗证据 */}
-                              {veh.isIntercepted && (
+                              {/* 查看卷宗证据 (只读查阅) */}
+                              {veh.isIntercepted ? (
                                 <button
                                   type="button"
                                   onClick={() => setPreviewEvidenceVehicle(veh)}
-                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition"
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium transition cursor-pointer flex items-center gap-1"
                                 >
-                                  查看卷宗
+                                  <FileCheck className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>查看卷宗</span>
                                 </button>
-                              )}
-
-                              {/* 大队初审按钮 */}
-                              {currentRole.level === 'brigade' && veh.isIntercepted && (veh.vehicleAuditStatus === 'PENDING' || !veh.vehicleAuditStatus) && (
-                                <button
-                                  type="button"
-                                  onClick={() => setAuditVehicle(veh)}
-                                  className="px-2 py-1 rounded bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-semibold shadow-xs transition"
-                                >
-                                  大队初审
-                                </button>
-                              )}
-
-                              {/* 支队终审按钮 */}
-                              {currentRole.level === 'branch' && veh.isIntercepted && veh.vehicleAuditStatus !== 'PASSED' && (
-                                <button
-                                  type="button"
-                                  onClick={() => setAuditVehicle(veh)}
-                                  className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold shadow-xs transition"
-                                >
-                                  支队终审
-                                </button>
-                              )}
-
-                              {/* 逐车填报反馈 / 驳回整改重报 */}
-                              {(!veh.isIntercepted || veh.vehicleAuditStatus === 'REJECTED') && (
-                                <button
-                                  type="button"
-                                  onClick={() => setFeedbackVehicle(veh)}
-                                  className={`px-2 py-1 rounded text-[11px] font-semibold shadow-xs transition ${
-                                    veh.vehicleAuditStatus === 'REJECTED'
-                                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
-                                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                                  }`}
-                                >
-                                  {veh.vehicleAuditStatus === 'REJECTED' ? '补正重报' : '填报反馈'}
-                                </button>
+                              ) : (
+                                <span className="text-slate-400 text-xs">待路面排查处置</span>
                               )}
                             </div>
                           </td>
@@ -1015,8 +1005,10 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                   </tbody>
                 </table>
               </div>
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           {/* ========================================================================= */}
           {/* TAB 4: OFFICIAL DOCUMENT */}
@@ -1080,32 +1072,74 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
                     {task.content}
                   </div>
 
-                  {/* Target Vehicles Matrix */}
-                  <div className="space-y-2">
-                    <div className="font-bold text-slate-900">【重点布控车辆清单】：</div>
-                    <div className="border border-slate-200 rounded-lg overflow-hidden">
-                      <table className="w-full text-xs text-left border-collapse">
-                        <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                          <tr>
-                            <th className="p-2.5">序号</th>
-                            <th className="p-2.5">号牌号码</th>
-                            <th className="p-2.5">号牌种类 (GA/T 16.7)</th>
-                            <th className="p-2.5">布控原因与处置要求</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {task.vehicles.map((veh, idx) => (
-                            <tr key={veh.id} className="bg-white">
-                              <td className="p-2.5 font-mono">{idx + 1}</td>
-                              <td className="p-2.5 font-mono font-bold text-blue-700">{veh.plateNo}</td>
-                              <td className="p-2.5">{veh.plateType}</td>
-                              <td className="p-2.5 text-slate-700">{veh.riskReason}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* Target Vehicles Matrix or Text Directive Mode */}
+                  {task.directiveType === 'TEXT' ? (
+                    <div className="space-y-2">
+                      <div className="font-bold text-slate-900">【指令类别与处置模式】：</div>
+                      <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-lg text-xs text-indigo-900 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span>本指令为<strong>【文本指令】</strong>，无关联重点车辆，各主送单位负责组织实地核查排查并上报处置报告。</span>
+                        </div>
+                        <span className="font-mono font-bold text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 shrink-0">
+                          免录入车辆
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="font-bold text-slate-900">【重点布控车辆清单】：</div>
+                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="p-2.5">序号</th>
+                              <th className="p-2.5">号牌号码</th>
+                              <th className="p-2.5">号牌种类 (GA/T 16.7)</th>
+                              <th className="p-2.5">布控原因与处置要求</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {task.vehicles.map((veh, idx) => (
+                              <tr key={veh.id} className="bg-white">
+                                <td className="p-2.5 font-mono">{idx + 1}</td>
+                                <td className="p-2.5 font-mono font-bold text-blue-700">{veh.plateNo}</td>
+                                <td className="p-2.5">{veh.plateType}</td>
+                                <td className="p-2.5 text-slate-700">{veh.riskReason}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Attachments Section in Official Document (Requirement 1) */}
+                  {task.attachments && task.attachments.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <div className="font-bold text-slate-900">【公文随附附件 ({task.attachments.length})】：</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {task.attachments.map((att) => (
+                          <div key={att.id} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+                            <div className="flex items-center space-x-2 truncate pr-2">
+                              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                              <div className="truncate">
+                                <div className="font-medium text-slate-800 truncate">{att.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{att.size} · 上传人：{att.uploadedBy}</div>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewAttachment(att)}
+                              className="px-2 py-1 rounded bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-blue-700 text-xs shrink-0 transition"
+                            >
+                              查看 / 模拟下载
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Operational Requirements */}
                   <div className="space-y-2 pt-2">
@@ -1224,118 +1258,219 @@ export const TaskDetailModal: React.FC<TaskDetailModalProps> = ({
         />
       )}
 
-      {/* 逐车审核流转弹窗 (大队初审 / 支队终审) */}
-      {auditVehicle && (
-        <AuditDialog
-          isOpen={true}
-          onClose={() => setAuditVehicle(null)}
-          nodeId={auditVehicle.interceptedByUnitId || currentRole.unitId}
-          unitName={auditVehicle.interceptedByUnitName || currentRole.unitName}
-          vehicle={auditVehicle}
-          taskDispatchTime={task.dispatchTime}
-          currentRole={currentRole}
-          onAuditSubmit={handleAuditSubmit}
-        />
-      )}
-
-      {/* 逐车拦截处置填报与驳回重报弹窗 */}
-      {feedbackVehicle && (
-        <VehicleInterceptionDialog
-          isOpen={true}
-          onClose={() => setFeedbackVehicle(null)}
-          vehicle={{
-            vehicleId: feedbackVehicle.id,
-            plateNo: feedbackVehicle.plateNo,
-            plateType: feedbackVehicle.plateType,
-            riskReason: feedbackVehicle.riskReason,
-          }}
-          taskDispatchTime={task.dispatchTime}
-          taskCategory={task.category}
-          feedbackElements={task.feedbackElements}
-          currentRole={currentRole}
-          onSubmitFeedback={handleFeedbackSubmit}
-        />
-      )}
-
-      {/* Sub-modal: Upper direct return confirmation (召回退回修改) */}
-      {showUpperReturnModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center space-x-2 text-amber-700">
-                <RotateCcw className="w-5 h-5" />
-                <h3 className="text-sm font-bold">上级主动退回修改确认（已签收召回）</h3>
+      {/* Sub-modal: Directive Attachment Preview (Requirement 1) */}
+      {previewAttachment && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Paperclip className="w-4 h-4 text-blue-600" />
+                <span className="font-bold text-sm text-slate-900">指令随附附件查阅</span>
               </div>
               <button
-                onClick={() => setShowUpperReturnModal(false)}
-                className="text-slate-400 hover:text-slate-700"
+                type="button"
+                onClick={() => setPreviewAttachment(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="text-xs text-slate-600 space-y-3">
-              <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
-                <div>指令编号：<strong className="font-mono">{task.taskNo}</strong></div>
-                <div>指令标题：<strong>{task.title}</strong></div>
-                <div className="text-[11px] text-amber-800 leading-relaxed pt-1.5 border-t border-amber-200/60">
-                  ⚠️ <strong>业务机制说明：</strong>当前下级责任单位<strong>已完成签收</strong>。
-                  发令上级可在下级完成最终处置反馈前，主动发起<strong>召回退回修改</strong>。
-                  确认后，系统将<strong>自动撤销下级单位各节点的待办任务</strong>，不计入下级考核及超时时效；
-                  工单直接返回您的<strong>【已退回·待更正重发】</strong>池，修改后可一键重新下发。
+            <div className="p-5 space-y-4">
+              <div className="p-4 rounded-lg bg-blue-50/60 border border-blue-100 flex items-start space-x-3">
+                <FileText className="w-8 h-8 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="text-sm font-bold text-slate-900">{previewAttachment.name}</div>
+                  <div className="text-xs text-slate-500 font-mono">
+                    大小：{previewAttachment.size} · 上传人：{previewAttachment.uploadedBy} · 时间：{previewAttachment.uploadTime}
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  退回修改原因 <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={upperReturnPreset}
-                  onChange={(e) => setUpperReturnPreset(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition"
-                >
-                  <option value="发现下发目标车辆或信息录入有误">发现下发目标车辆或信息录入有误</option>
-                  <option value="研判核查无需继续路面拦截处置">研判核查无需继续路面拦截处置</option>
-                  <option value="责任管辖辖区指派需纠偏更正">责任管辖辖区指派需纠偏更正</option>
-                  <option value="指令处置要求与时限要素调整">指令处置要求与时限要素调整</option>
-                  <option value="其他情况发令上级主动召回">其他情况发令上级主动召回</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  更正说明与修改备注（选填）
-                </label>
-                <textarea
-                  rows={3}
-                  value={upperReturnDetail}
-                  onChange={(e) => setUpperReturnDetail(e.target.value)}
-                  placeholder="请输入需要修改更正的要点，便于重发时对齐核对..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs text-slate-900 focus:bg-white focus:outline-none focus:border-amber-500 transition resize-none"
-                />
+              <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-2">
+                <div className="font-semibold text-slate-900">【附件查验摘要说明】：</div>
+                <p className="leading-relaxed">
+                  该附件为指令发布单位（市局交警支队指挥调度中心）于下达《{task.title}》时同步上传的法定依据公文及工作指引。各主送大队及一线基层执勤中队应组织学习并严格遵照执行。
+                </p>
+                <div className="pt-2 text-[11px] text-slate-400 font-mono flex items-center justify-between">
+                  <span>数字摘要：SHA256: 8e7a4b...c39f</span>
+                  <span className="text-emerald-600 font-semibold">✓ 经警务内网电子验签完整</span>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-end space-x-2 pt-2 border-t">
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs text-slate-500">公文流水号：{task.taskNo}</span>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    alert(`模拟下载：已将 ${previewAttachment.name} 导出至本地警务安全下载目录。`);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>下载附件</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewAttachment(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-modal: Text Directive Feedback Detail (Requirement 3) */}
+      {selectedFeedbackNode && (
+        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-4 h-4 text-blue-600" />
+                <span className="font-bold text-sm text-slate-900">
+                  {selectedFeedbackNode.unitName} · 处置文字反馈报告详情
+                </span>
+              </div>
               <button
                 type="button"
-                onClick={() => setShowUpperReturnModal(false)}
-                className="px-3 py-1.5 rounded border border-slate-200 text-xs text-slate-600 hover:bg-slate-100"
+                onClick={() => setSelectedFeedbackNode(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-md"
               >
-                取消
+                <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto">
+              {/* Basic Meta Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-lg border border-slate-200 text-xs">
+                <div>
+                  <div className="text-slate-400">处置责任单位</div>
+                  <div className="font-bold text-slate-900 mt-0.5">{selectedFeedbackNode.unitName}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">处警民警</div>
+                  <div className="font-semibold text-slate-800 mt-0.5">{selectedFeedbackNode.feedbackOfficer || '尚未指派'}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">处警上报时间</div>
+                  <div className="font-mono text-slate-800 mt-0.5">{selectedFeedbackNode.feedbackTime || '尚未填报'}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">签收民警 / 时间</div>
+                  <div className="text-slate-700 mt-0.5 font-mono">
+                    {selectedFeedbackNode.signedBy ? `${selectedFeedbackNode.signedBy}` : '待签收'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Feedback Text Content */}
+              <div className="space-y-1.5">
+                <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                  <span>反馈文字报告内容全文：</span>
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50/80 border border-slate-200 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap">
+                  {selectedFeedbackNode.feedbackText || (
+                    <span className="text-slate-400 italic">该单位尚未录入处置文字总结。</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Feedback Attachments */}
+              {selectedFeedbackNode.feedbackAttachments && selectedFeedbackNode.feedbackAttachments.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+                    <span>现场处置佐证附件 ({selectedFeedbackNode.feedbackAttachments.length})：</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {selectedFeedbackNode.feedbackAttachments.map((att, idx) => (
+                      <div key={idx} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between text-xs">
+                        <div className="truncate pr-2">
+                          <div className="font-medium text-slate-800 truncate">{att.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{att.size}</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => alert(`模拟查阅佐证材料：${att.name}`)}
+                          className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 text-xs shrink-0 transition"
+                        >
+                          查看
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Multi-Level Audit Opinions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                {/* Brigade Audit Opinion */}
+                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">大队初审结论</span>
+                    {selectedFeedbackNode.brigadeAudit?.result === 'PASS' ? (
+                      <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">通过</span>
+                    ) : selectedFeedbackNode.brigadeAudit?.result === 'REJECT' ? (
+                      <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">驳回</span>
+                    ) : (
+                      <span className="text-slate-400">待初审</span>
+                    )}
+                  </div>
+                  {selectedFeedbackNode.brigadeAudit && (
+                    <div className="space-y-1 text-[11px] text-slate-600">
+                      <div>审核人：<span className="font-medium text-slate-800">{selectedFeedbackNode.brigadeAudit.auditorName}</span></div>
+                      <div>审核时间：<span className="font-mono text-slate-500">{selectedFeedbackNode.brigadeAudit.auditTime}</span></div>
+                      <div className="p-2 rounded bg-white border border-slate-200 mt-1">
+                        意见：{selectedFeedbackNode.brigadeAudit.opinion || '初审通过，同意上报支队'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Branch Audit Opinion */}
+                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800">支队终审 (办结考核)</span>
+                    {selectedFeedbackNode.branchAudit?.result === 'PASS' ? (
+                      <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">终审通过</span>
+                    ) : selectedFeedbackNode.branchAudit?.result === 'REJECT' ? (
+                      <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">终审驳回</span>
+                    ) : (
+                      <span className="text-slate-400">待终审</span>
+                    )}
+                  </div>
+                  {selectedFeedbackNode.branchAudit && (
+                    <div className="space-y-1 text-[11px] text-slate-600">
+                      <div>终审人：<span className="font-medium text-slate-800">{selectedFeedbackNode.branchAudit.auditorName}</span></div>
+                      <div>终审时间：<span className="font-mono text-slate-500">{selectedFeedbackNode.branchAudit.auditTime}</span></div>
+                      <div className="p-2 rounded bg-white border border-slate-200 mt-1">
+                        意见：{selectedFeedbackNode.branchAudit.opinion || '终审合格，准予办结归档'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
               <button
                 type="button"
-                onClick={handleConfirmDirectReturn}
-                className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+                onClick={() => setSelectedFeedbackNode(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition"
               >
-                确认退回修改
+                关闭
               </button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };

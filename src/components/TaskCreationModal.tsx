@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { 
   DispatchTask, PlateType, CompletionRule, UserRoleContext, 
-  TaskCategory, FeedbackElementConfig, TaskAttachment, SystemNotice 
+  TaskCategory, FeedbackElementConfig, TaskAttachment, SystemNotice,
+  DirectiveType
 } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 
@@ -144,6 +145,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
   onAddNotice,
 }) => {
   const isEditing = Boolean(initialTask);
+  const [directiveType, setDirectiveType] = useState<DirectiveType>(initialTask?.directiveType || 'VEHICLE');
   const [title, setTitle] = useState(initialTask?.title || '');
   const [category, setCategory] = useState<TaskCategory>(initialTask?.category || '车辆缉查');
   const [urgency, setUrgency] = useState<'特急' | '紧急' | '常规'>(initialTask?.urgency || '紧急');
@@ -364,7 +366,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
       alert('请输入指令标题');
       return;
     }
-    if (vehicles.length === 0) {
+    if (directiveType === 'VEHICLE' && vehicles.length === 0) {
       alert('请至少添加一辆目标车辆（需包含号牌号码与号牌种类）');
       return;
     }
@@ -402,7 +404,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
         unitName: unitObj?.name || uId,
         unitLevel: unitObj?.level || (currentRole.level === 'branch' ? 'brigade' : 'squadron'),
         status: 'PENDING_SIGN' as const,
-        vehiclesStatus: vehicles.map((v) => ({
+        vehiclesStatus: directiveType === 'TEXT' ? [] : vehicles.map((v) => ({
           vehicleId: v.id,
           plateNo: v.plateNo,
           plateType: v.plateType,
@@ -416,6 +418,7 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
       id: initialTask ? initialTask.id : `task-${Date.now()}`,
       taskNo,
       title: title.trim(),
+      directiveType,
       category,
       creatorLevel: currentRole.level as 'branch' | 'brigade',
       creatorUnitId: currentRole.unitId,
@@ -425,12 +428,14 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
       dispatchTime: nowStr,
       deadline: deadlineStr,
       urgency,
-      completionRule,
-      content: content.trim() || '请各单位立即组织路面执勤警力进行卡口布控与车辆拦截核查，严格按指令配置的反馈要素上传处置文书与佐证材料。',
+      completionRule: directiveType === 'TEXT' ? 'ALL_COMPLETE' : completionRule,
+      content: content.trim() || (directiveType === 'TEXT' 
+        ? '请各责任单位组织警力认真排查研判，按时完成处置并录入详细文字报告与现场佐证照片。'
+        : '请各单位立即组织路面执勤警力进行卡口布控与车辆拦截核查，严格按指令配置的反馈要素上传处置文书与佐证材料。'),
       targetArea,
       feedbackElements: feedbackConfigs,
       attachments,
-      vehicles: vehicles.map((v) => ({
+      vehicles: directiveType === 'TEXT' ? [] : vehicles.map((v) => ({
         id: v.id,
         plateNo: v.plateNo,
         plateType: v.plateType,
@@ -530,6 +535,79 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
           {/* Section 1: Task Category & Urgency */}
           <div className="space-y-4">
+            {/* Directive Type Selector (按车反馈指令 vs 文本指令) */}
+            <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/70 to-slate-50 p-4 rounded-xl border border-blue-200 shadow-2xs">
+              <div className="flex items-center justify-between mb-2.5">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                  <span>指令反馈类型模式</span>
+                  <span className="text-rose-500">*</span>
+                </label>
+                <span className="text-[11px] text-slate-500 font-normal">
+                  选择按车精准布控 或 综合勤务文本上报
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  id="btn-directive-type-vehicle"
+                  onClick={() => setDirectiveType('VEHICLE')}
+                  className={`p-3 rounded-xl border text-left transition flex items-start space-x-3 ${
+                    directiveType === 'VEHICLE'
+                      ? 'bg-white border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
+                      : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 transition ${
+                    directiveType === 'VEHICLE' ? 'bg-blue-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Car className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-900">按车反馈指令</span>
+                      {directiveType === 'VEHICLE' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      需录入目标车辆清单。下级路面警力精准拦截、开具六合一处罚文书并逐车终审。
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-directive-type-text"
+                  onClick={() => setDirectiveType('TEXT')}
+                  className={`p-3 rounded-xl border text-left transition flex items-start space-x-3 ${
+                    directiveType === 'TEXT'
+                      ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                      : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <div className={`p-2 rounded-lg shrink-0 transition ${
+                    directiveType === 'TEXT' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-900">文本指令</span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-semibold">
+                          免填车辆
+                        </span>
+                      </div>
+                      {directiveType === 'TEXT' && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      综合勤务、隐患排查、交通组织等，无需车辆清单，责任单位填报文字报告与佐证附件。
+                    </p>
+                  </div>
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <h3 className="text-xs font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
                 <Tag className="w-4 h-4 text-blue-600" />
@@ -852,99 +930,117 @@ export const TaskCreationModal: React.FC<TaskCreationModalProps> = ({
             </div>
           </div>
 
-          {/* Section 4: Target Vehicles (Plate No + Plate Type) */}
-          <div className="space-y-3 pt-2 border-t border-slate-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
-                <Car className="w-4 h-4 text-emerald-600" />
-                <span>4. 目标车辆清单 (号牌号码 + 号牌种类 复合主键)</span>
-              </h3>
-              <span className="text-xs text-slate-500">已添加 {vehicles.length} 辆</span>
+          {/* Section 4: Target Vehicles (Only for 'VEHICLE' directive type) */}
+          {directiveType === 'VEHICLE' ? (
+            <div className="space-y-3 pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Car className="w-4 h-4 text-emerald-600" />
+                  <span>4. 目标车辆清单 (号牌号码 + 号牌种类 复合主键)</span>
+                </h3>
+                <span className="text-xs text-slate-500">已添加 {vehicles.length} 辆</span>
+              </div>
+
+              {/* Add vehicle inline input */}
+              <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] text-slate-600 mb-1 font-medium">号牌号码</label>
+                    <input
+                      type="text"
+                      placeholder="如：浙A9988G"
+                      value={newPlateNo}
+                      onChange={(e) => setNewPlateNo(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-900 font-mono uppercase focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-3">
+                    <label className="block text-[11px] text-slate-600 mb-1 font-medium">号牌种类</label>
+                    <select
+                      value={newPlateType}
+                      onChange={(e) => setNewPlateType(e.target.value as PlateType)}
+                      className="w-full bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600"
+                    >
+                      {PLATE_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="block text-[11px] text-slate-600 mb-1 font-medium">排查/布控原因</label>
+                    <input
+                      type="text"
+                      placeholder="如：涉嫌假牌套牌、多次违章"
+                      value={newRiskReason}
+                      onChange={(e) => setNewRiskReason(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-1 flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleAddVehicle}
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-md py-1.5 flex items-center justify-center transition shadow-xs"
+                      title="添加车辆"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Vehicle list display */}
+              <div className="space-y-2">
+                {vehicles.map((v, idx) => (
+                  <div
+                    key={v.id}
+                    className="flex items-center justify-between bg-slate-50 hover:bg-slate-100/80 border border-slate-200 px-3.5 py-2.5 rounded-lg transition"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <span className="text-xs text-slate-400 font-mono">#{idx + 1}</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold text-xs tracking-wider">
+                          {v.plateNo}
+                        </span>
+                        <span className="text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded">
+                          {v.plateType}
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-600 truncate max-w-xs">{v.riskReason}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveVehicle(v.id)}
+                      className="text-slate-400 hover:text-rose-600 p-1 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-
-            {/* Add vehicle inline input */}
-            <div className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                <div className="sm:col-span-4">
-                  <label className="block text-[11px] text-slate-600 mb-1 font-medium">号牌号码</label>
-                  <input
-                    type="text"
-                    placeholder="如：浙A9988G"
-                    value={newPlateNo}
-                    onChange={(e) => setNewPlateNo(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-900 font-mono uppercase focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  />
+          ) : (
+            <div className="pt-2 border-t border-slate-200">
+              <div className="p-4 rounded-xl bg-indigo-50/70 border border-indigo-200/80 flex items-start space-x-3 text-xs text-indigo-950">
+                <div className="p-1.5 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5 shadow-2xs">
+                  <FileText className="w-4 h-4" />
                 </div>
-
-                <div className="sm:col-span-3">
-                  <label className="block text-[11px] text-slate-600 mb-1 font-medium">号牌种类</label>
-                  <select
-                    value={newPlateType}
-                    onChange={(e) => setNewPlateType(e.target.value as PlateType)}
-                    className="w-full bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-600"
-                  >
-                    {PLATE_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-4">
-                  <label className="block text-[11px] text-slate-600 mb-1 font-medium">排查/布控原因</label>
-                  <input
-                    type="text"
-                    placeholder="如：涉嫌假牌套牌、多次违章"
-                    value={newRiskReason}
-                    onChange={(e) => setNewRiskReason(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                  />
-                </div>
-
-                <div className="sm:col-span-1 flex items-end">
-                  <button
-                    type="button"
-                    onClick={handleAddVehicle}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-md py-1.5 flex items-center justify-center transition shadow-xs"
-                    title="添加车辆"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+                <div>
+                  <div className="font-bold text-xs text-indigo-900 mb-1">
+                    当前为【文本指令】模式 · 无需填写目标车辆清单
+                  </div>
+                  <p className="text-[11px] text-indigo-800/80 leading-relaxed">
+                    本指令下发后，各接收大队及执勤中队将直接填报综合排查文本、工作文字报告及现场佐证材料（图片或文档），无需指定具体机动车号牌。
+                  </p>
                 </div>
               </div>
             </div>
-
-            {/* Vehicle list display */}
-            <div className="space-y-2">
-              {vehicles.map((v, idx) => (
-                <div
-                  key={v.id}
-                  className="flex items-center justify-between bg-slate-50 hover:bg-slate-100/80 border border-slate-200 px-3.5 py-2.5 rounded-lg transition"
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-xs text-slate-400 font-mono">#{idx + 1}</span>
-                    <div className="flex items-center space-x-2">
-                      <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold text-xs tracking-wider">
-                        {v.plateNo}
-                      </span>
-                      <span className="text-xs bg-slate-200 text-slate-700 px-2 py-0.5 rounded">
-                        {v.plateType}
-                      </span>
-                    </div>
-                    <span className="text-xs text-slate-600 truncate max-w-xs">{v.riskReason}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveVehicle(v.id)}
-                    className="text-slate-400 hover:text-rose-600 p-1 transition"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* Section 5: Target Units */}
           <div className="space-y-3 pt-2 border-t border-slate-200">

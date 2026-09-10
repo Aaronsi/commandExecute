@@ -85,8 +85,8 @@ export default function App() {
   };
 
   const handleUpdateTask = (updatedTask: DispatchTask) => {
-    setTasks(tasks.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
-    setSelectedTask(updatedTask);
+    setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+    setSelectedTask((prev) => (prev && prev.id === updatedTask.id ? updatedTask : prev));
   };
 
   const handleReDispatchTask = (task: DispatchTask) => {

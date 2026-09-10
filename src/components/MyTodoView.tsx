@@ -3,11 +3,14 @@ import {
   CheckSquare, Clock, AlertTriangle, AlertCircle, RotateCcw, 
   Shield, CheckCircle2, ChevronRight, Eye, Send, Car, Building2,
   FileCheck, GitBranch, ArrowRight, UserCheck, Check, X, Ban,
-  Search, Filter, RefreshCw, Layers, BellRing, ChevronDown, CheckCircle
+  Search, Filter, RefreshCw, Layers, BellRing, ChevronDown, CheckCircle,
+  FileText, Paperclip
 } from 'lucide-react';
 import { DispatchTask, TaskExecutionNode, TaskVehicle, UserRoleContext, SystemNotice } from '../types';
 import { MOCK_ORG_UNITS } from '../data/mockData';
 import { Pagination } from './Pagination';
+import { DirectiveFirstLineBadges } from './DirectiveFirstLineBadges';
+import { TaskOperationModal, TaskOperationMode } from './TaskOperationModal';
 
 interface MyTodoViewProps {
   tasks: DispatchTask[];
@@ -92,8 +95,16 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
   const [returnPreset, setReturnPreset] = useState('【非本辖区】车辆已驶离进入其他管辖大队');
   const [returnDetail, setReturnDetail] = useState('');
 
-  // 催办弹窗状态
+  // 错件退单审批弹窗状态 (支队/大队统一弹窗审批：选择 同意/驳回 并填写理由)
+  const [returnApprovalTask, setReturnApprovalTask] = useState<DispatchTask | null>(null);
+  const [approvalDecision, setApprovalDecision] = useState<'AGREE' | 'REJECT'>('AGREE');
+  const [approvalReason, setApprovalReason] = useState<string>('核实属非本辖区管辖，同意退回修改，工单重回发令池重新下发。');
+
+  // 催办与操作成功轻提示状态
   const [superviseToast, setSuperviseToast] = useState<string | null>(null);
+
+  // 指令专属处置/审核操作弹窗 (仅展示目标车辆处置总表)
+  const [operationTask, setOperationTask] = useState<{ task: DispatchTask; mode: TaskOperationMode } | null>(null);
 
   // 大队：再下发中队弹窗状态
   const [dispatchDownTask, setDispatchDownTask] = useState<DispatchTask | null>(null);
@@ -166,16 +177,22 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
         );
         if (hasSquadrons) return false;
 
-        // 大队自办直办：大队已签收或已自办反馈，且全单车辆尚未终审全部通过
+        // 大队自办直办：大队已签收或已自办反馈
         if (myNode.status === 'SIGNED' || myNode.status === 'FEEDBACK_SUBMITTED') {
+          if (t.directiveType === 'TEXT') {
+            return !myNode.feedbackText || myNode.status === 'SIGNED';
+          }
           return t.vehicles.some(
             (v) => !v.isIntercepted || v.vehicleAuditStatus === 'PENDING' || v.vehicleAuditStatus === 'REJECTED'
           );
         }
         return false;
       } else if (currentRole.level === 'squadron') {
-        // 中队待处置反馈：中队已签收或已反馈，但车辆未拦截或待审核
+        // 中队待处置反馈：中队已签收或已反馈
         if (myNode.status === 'SIGNED' || myNode.status === 'FEEDBACK_SUBMITTED') {
+          if (t.directiveType === 'TEXT') {
+            return !myNode.feedbackText || myNode.status === 'SIGNED';
+          }
           return t.vehicles.some(
             (v) => !v.isIntercepted || v.vehicleAuditStatus === 'PENDING'
           );
@@ -198,11 +215,15 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
             n.parentId === `node-${currentRole.unitId}` ||
             n.parentId?.startsWith('node-brigade-01'))
       );
-      return squadronNodes.some(
-        (n) =>
+      return squadronNodes.some((n) => {
+        if (t.directiveType === 'TEXT') {
+          return n.status === 'FEEDBACK_SUBMITTED' && (!n.brigadeAudit || !n.brigadeAudit.result);
+        }
+        return (
           n.vehiclesStatus?.some((vs) => vs.isIntercepted && vs.auditStatus === 'PENDING') ||
           n.status === 'FEEDBACK_SUBMITTED'
-      );
+        );
+      });
     });
   }, [tasks, currentRole.unitId]);
 
@@ -223,22 +244,58 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     });
   }, [tasks, currentRole.level, currentRole.unitId]);
 
-  // 6. 驳回待整改 (中队)
+  // 6. 驳回待整改 (中队路面重新采集 / 大队整改跟进)
   const rejectedFixTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
-      const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
-      if (!myNode) return false;
-      return t.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED');
+      if (currentRole.level === 'squadron') {
+        const myNode = t.executionNodes.find((n) => n.unitId === currentRole.unitId);
+        if (!myNode) return false;
+        if (t.directiveType === 'TEXT') {
+          return myNode.status === 'REJECTED';
+        }
+        return t.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED');
+      } else if (currentRole.level === 'brigade') {
+        const mySubSquadronIds = MOCK_ORG_UNITS.filter((u) => u.parentId === currentRole.unitId).map((u) => u.id);
+        const hasRelevantNode = t.executionNodes.some(
+          (n) => n.unitId === currentRole.unitId || mySubSquadronIds.includes(n.unitId)
+        );
+        if (t.directiveType === 'TEXT') {
+          return t.executionNodes.some(
+            (n) => (n.unitId === currentRole.unitId || mySubSquadronIds.includes(n.unitId)) && n.status === 'REJECTED'
+          );
+        }
+        return hasRelevantNode && t.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED');
+      }
+      return false;
     });
-  }, [tasks, currentRole.unitId]);
+  }, [tasks, currentRole.level, currentRole.unitId]);
 
   // 7. 待支队终审 (支队)
   const branchAuditTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.overallStatus !== 'PROCESSING') return false;
+      if (t.directiveType === 'TEXT') {
+        return t.executionNodes.some((n) => {
+          if (n.unitLevel === 'squadron') {
+            return n.brigadeAudit?.result === 'PASS' && (!n.branchAudit || n.branchAudit.result !== 'PASS');
+          }
+          if (n.unitLevel === 'brigade') {
+            const hasSquadrons = t.executionNodes.some(
+              (sn) => sn.unitLevel === 'squadron' && (sn.parentId === n.id || sn.parentId === `node-${n.unitId}`)
+            );
+            if (!hasSquadrons) {
+              return (
+                (n.status === 'FEEDBACK_SUBMITTED' || n.status === 'AUDITED_PASS') &&
+                (!n.branchAudit || n.branchAudit.result !== 'PASS')
+              );
+            }
+          }
+          return false;
+        });
+      }
       return t.vehicles.some((v) => {
-        if (v.vehicleAuditStatus !== 'PENDING') return false;
+        if (v.vehicleAuditStatus !== 'PENDING' && v.vehicleAuditStatus !== 'BRIGADE_PASSED') return false;
         const node = t.executionNodes.find((n) =>
           n.vehiclesStatus?.some((vs) => vs.vehicleId === v.id && vs.isIntercepted)
         );
@@ -251,10 +308,17 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     });
   }, [tasks]);
 
-  // 8. 错件待更正重发 (支队指挥长)
+  // 8. 错件待更正重发 (支队指挥长 / 大队自发退单)
   const returnedDraftTasks = useMemo(() => {
-    return tasks.filter((t) => t.overallStatus === 'RETURNED_DRAFT');
-  }, [tasks]);
+    return tasks.filter((t) => {
+      if (t.overallStatus !== 'RETURNED_DRAFT') return false;
+      if (currentRole.level === 'branch') return true;
+      if (currentRole.level === 'brigade') {
+        return t.creatorUnitId === currentRole.unitId;
+      }
+      return false;
+    });
+  }, [tasks, currentRole.level, currentRole.unitId]);
 
   // 依据用户当前角色确定可显示的页签清单 (大队页签顺序严格按照用户指定：1.待我签收 2.待转派中队 3.待处置反馈 4.待大队初审 5.错件退单审批)
   const roleTabs = useMemo(() => {
@@ -327,13 +391,31 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
           desc: '核实下辖中队提交的处置凭证并审核上报支队终审',
         },
         {
+          key: 'REJECTED_FIX',
+          label: '驳回待整改',
+          count: rejectedFixTasks.length,
+          icon: AlertTriangle,
+          color: 'text-rose-600 bg-rose-50 border-rose-200',
+          badgeColor: 'bg-rose-600 text-white',
+          desc: '上级终审驳回或中队反馈被驳回需整改补充凭证',
+        },
+        {
           key: 'RETURN_CONFIRM',
           label: '错件退单审批',
           count: pendingReturnConfirmTasks.length,
           icon: RotateCcw,
+          color: 'text-amber-600 bg-amber-50 border-amber-200',
+          badgeColor: 'bg-amber-600 text-white',
+          desc: '下辖中队申请退回修改的错件待大队指挥长核准确认',
+        },
+        {
+          key: 'RETURNED_DRAFT',
+          label: '退单待更正重发',
+          count: returnedDraftTasks.length,
+          icon: AlertCircle,
           color: 'text-rose-600 bg-rose-50 border-rose-200',
           badgeColor: 'bg-rose-600 text-white',
-          desc: '下辖中队申请退回修改的错件待大队指挥长核准确认',
+          desc: '大队自发错派退回工单，更正目标责任单位后重新下发',
         },
       ];
     } else {
@@ -477,61 +559,141 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     };
 
     onUpdateTask(updatedTask);
+    setSuperviseToast(`已成功在线签收指令【${task.taskNo}】，责任时限已正式启动！`);
+    setTimeout(() => setSuperviseToast(null), 3000);
   };
 
-  // 确认同意退回（上级）
-  const handleApproveReturn = (task: DispatchTask, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  // 打开错件退单审批弹窗
+  const openReturnApprovalModal = (task: DispatchTask) => {
+    setReturnApprovalTask(task);
+    setApprovalDecision('AGREE');
+    setApprovalReason('核实属非本辖区管辖，同意退回修改，工单重回发令池重新下发。');
+  };
 
-    const updatedTask: DispatchTask = {
-      ...task,
-      overallStatus: 'RETURNED_DRAFT',
-      returnRequest: task.returnRequest
-        ? {
-            ...task.returnRequest,
-            status: 'CONFIRMED',
-            confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
-            confirmedTime: nowStr,
-            confirmRemarks: '同意退回修改，工单重回待发池，请上级更正后重新下发。',
-          }
-        : undefined,
-      executionNodes: [],
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-ret-appr-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '确认退回修改',
-          details: `${currentRole.unitName} 确认同意退回修改，下级待办彻底释放，工单返回待更正重发池。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
-
-    // 触发系统消息提醒 (推送给申请退单的下级单位)
-    if (onAddNotice && task.returnRequest) {
-      onAddNotice({
-        id: `notice-ret-appr-${Date.now()}`,
-        type: 'RETURN_APPROVED',
-        targetUnitId: task.returnRequest.requestedByUnitId,
-        targetUnitName: task.returnRequest.requestedByUnitName,
-        targetLevel: task.returnRequest.requestedByUnitId.startsWith('squadron') ? 'squadron' : 'brigade',
-        taskId: task.id,
-        taskNo: task.taskNo,
-        taskTitle: task.title,
-        title: '错件退回申请已审核通过',
-        content: `${currentRole.unitName} 审核同意了贵单位关于指令【${task.taskNo}】的错派退回申请，下级责任已释放，工单已退回发令池待更正。`,
-        urgency: task.urgency,
-        timestamp: nowStr,
-        isRead: false,
-        isDismissedFromToast: false,
-        actionType: 'VIEW_TASK',
-      });
+  // 切换审批决策并智能设置预设理由
+  const handleSelectDecision = (decision: 'AGREE' | 'REJECT') => {
+    setApprovalDecision(decision);
+    if (decision === 'AGREE') {
+      setApprovalReason('核实属非本辖区管辖，同意退回修改，工单重回发令池重新下发。');
+    } else {
+      setApprovalReason('经指挥中心核实，该车辆仍在该辖区主要通道，证据不足以退单，维持原派发，请继续排查拦截。');
     }
+  };
+
+  // 确认提交退回审批结论 (支持 同意 / 驳回)
+  const handleConfirmReturnApproval = () => {
+    if (!returnApprovalTask || !returnApprovalTask.returnRequest) return;
+    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const task = returnApprovalTask;
+    const reasonText = approvalReason.trim() || (approvalDecision === 'AGREE' ? '同意退回修改。' : '驳回退回申请。');
+
+    if (approvalDecision === 'AGREE') {
+      const updatedTask: DispatchTask = {
+        ...task,
+        overallStatus: 'RETURNED_DRAFT',
+        returnRequest: {
+          ...task.returnRequest,
+          status: 'CONFIRMED',
+          confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
+          confirmedTime: nowStr,
+          confirmRemarks: reasonText,
+        },
+        executionNodes: [],
+        actionLogs: [
+          ...task.actionLogs,
+          {
+            id: `log-ret-appr-${Date.now()}`,
+            timestamp: nowStr,
+            operatorName: currentRole.userName,
+            operatorUnit: currentRole.unitName,
+            action: '确认退回修改',
+            details: `${currentRole.unitName} 审批结论：【同意退回修改】。审批理由：${reasonText}。下级待办彻底释放，工单返回待更正重发池。`,
+          },
+        ],
+      };
+
+      onUpdateTask(updatedTask);
+
+      // 触发系统消息提醒 (推送给申请退单的下级单位)
+      if (onAddNotice && task.returnRequest) {
+        onAddNotice({
+          id: `notice-ret-appr-${Date.now()}`,
+          type: 'RETURN_APPROVED',
+          targetUnitId: task.returnRequest.requestedByUnitId,
+          targetUnitName: task.returnRequest.requestedByUnitName,
+          targetLevel: task.returnRequest.requestedByUnitId.startsWith('squadron') ? 'squadron' : 'brigade',
+          taskId: task.id,
+          taskNo: task.taskNo,
+          taskTitle: task.title,
+          title: '错件退回申请已审批通过',
+          content: `${currentRole.unitName} 审核同意了贵单位关于指令【${task.taskNo}】的错派退回申请。审批理由：${reasonText}。本单位责任已释放，工单已退回待更正重发。`,
+          urgency: task.urgency,
+          timestamp: nowStr,
+          isRead: false,
+          isDismissedFromToast: false,
+          actionType: 'VIEW_TASK',
+        });
+      }
+
+      setSuperviseToast(`已同意指令【${task.taskNo}】退回申请，工单已流转至“退单待更正重发”！`);
+    } else {
+      // 驳回退回申请
+      const updatedTask: DispatchTask = {
+        ...task,
+        returnRequest: {
+          ...task.returnRequest,
+          status: 'REJECTED',
+          confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
+          confirmedTime: nowStr,
+          confirmRemarks: reasonText,
+        },
+        executionNodes: task.executionNodes.map((n) => {
+          if (n.unitId === task.returnRequest?.requestedByUnitId) {
+            return { ...n, status: 'SIGNED' as const };
+          }
+          return n;
+        }),
+        actionLogs: [
+          ...task.actionLogs,
+          {
+            id: `log-ret-rej-${Date.now()}`,
+            timestamp: nowStr,
+            operatorName: currentRole.userName,
+            operatorUnit: currentRole.unitName,
+            action: '驳回退回申请',
+            details: `${currentRole.unitName} 审批结论：【驳回退回申请】。驳回理由：${reasonText}。指令维持原责任执行。`,
+          },
+        ],
+      };
+
+      onUpdateTask(updatedTask);
+
+      // 触发系统消息提醒 (推送给申请退单的下级单位)
+      if (onAddNotice && task.returnRequest) {
+        onAddNotice({
+          id: `notice-ret-rej-${Date.now()}`,
+          type: 'AUDIT_REJECTED',
+          targetUnitId: task.returnRequest.requestedByUnitId,
+          targetUnitName: task.returnRequest.requestedByUnitName,
+          targetLevel: task.returnRequest.requestedByUnitId.startsWith('squadron') ? 'squadron' : 'brigade',
+          taskId: task.id,
+          taskNo: task.taskNo,
+          taskTitle: task.title,
+          title: '错件退回申请已被驳回',
+          content: `${currentRole.unitName} 驳回了贵单位关于指令【${task.taskNo}】的退单申请。驳回理由：${reasonText}。请按原指令要求继续排查拦截。`,
+          urgency: '特急',
+          timestamp: nowStr,
+          isRead: false,
+          isDismissedFromToast: false,
+          actionType: 'VIEW_TASK',
+        });
+      }
+
+      setSuperviseToast(`已驳回指令【${task.taskNo}】退回申请，指令维持原派发责任继续执行！`);
+    }
+
+    setReturnApprovalTask(null);
+    setTimeout(() => setSuperviseToast(null), 3500);
   };
 
   // 确认再下发中队 (大队选择转派中队)
@@ -635,43 +797,6 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
     setDispatchDownTask(null);
     setSuperviseToast(`已成功将指令【${dispatchDownTask.taskNo}】转派至 ${selectedSquadronNames}，路面待办已激活！`);
     setTimeout(() => setSuperviseToast(null), 3500);
-  };
-
-  // 驳回退回申请（上级）
-  const handleRejectReturn = (task: DispatchTask, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!task.returnRequest) return;
-    const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 19);
-
-    const updatedTask: DispatchTask = {
-      ...task,
-      returnRequest: {
-        ...task.returnRequest,
-        status: 'REJECTED',
-        confirmedBy: `${currentRole.userName} (${currentRole.policeNo})`,
-        confirmedTime: nowStr,
-        confirmRemarks: '经指挥中心核实，该车辆仍在辖区主要通道，维持原派发，请继续拦截。',
-      },
-      executionNodes: task.executionNodes.map((n) => {
-        if (n.unitId === task.returnRequest?.requestedByUnitId) {
-          return { ...n, status: 'SIGNED' as const };
-        }
-        return n;
-      }),
-      actionLogs: [
-        ...task.actionLogs,
-        {
-          id: `log-ret-rej-${Date.now()}`,
-          timestamp: nowStr,
-          operatorName: currentRole.userName,
-          operatorUnit: currentRole.unitName,
-          action: '驳回退回申请',
-          details: `上级指挥中心驳回了 ${task.returnRequest.requestedByUnitName} 的退回申请，指令维持原责任执行。`,
-        },
-      ],
-    };
-
-    onUpdateTask(updatedTask);
   };
 
   // 提交退回申请（下级）
@@ -1375,41 +1500,7 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
                         />
                       </div>
                     )}
-                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-                      {task.taskNo}
-                    </span>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                      {task.category}
-                    </span>
-                    <span
-                      className={`text-xs font-semibold px-2 py-0.5 rounded border ${
-                        task.urgency === '特急'
-                          ? 'bg-rose-50 text-rose-700 border-rose-200 font-bold'
-                          : task.urgency === '紧急'
-                          ? 'bg-orange-50 text-orange-700 border-orange-200'
-                          : 'bg-slate-100 text-slate-700 border-slate-200'
-                      }`}
-                    >
-                      {task.urgency}
-                    </span>
-                    <span className="text-xs text-slate-500">
-                      规则：<strong>{task.completionRule === 'ANY_COMPLETE' ? '任一完成' : '全部完成'}</strong>
-                    </span>
-
-                    {/* 驳回标记 */}
-                    {task.vehicles.some((v) => v.vehicleAuditStatus === 'REJECTED') && (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3 text-rose-600" />
-                        <span>审核被驳回待补正</span>
-                      </span>
-                    )}
-
-                    {/* 退回标记 */}
-                    {task.overallStatus === 'RETURNED_DRAFT' && (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
-                        错派已退回 · 待更正重发
-                      </span>
-                    )}
+                    <DirectiveFirstLineBadges task={task} />
                   </div>
 
                   <div className="text-[11px] text-slate-500">
@@ -1423,26 +1514,108 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
                   {task.title}
                 </h3>
 
-                {/* 目标车辆清单 */}
-                <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                  <span className="text-slate-500 font-medium">涉及车辆 ({task.vehicles.length} 辆)：</span>
-                  {task.vehicles.map((v) => (
-                    <span
-                      key={v.id}
-                      className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
-                        v.vehicleAuditStatus === 'REJECTED'
-                          ? 'bg-rose-50 border-rose-300 text-rose-700'
-                          : v.isIntercepted
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                          : 'bg-white border-slate-200 text-slate-800'
-                      }`}
-                    >
-                      {v.plateNo}
-                      {v.vehicleAuditStatus === 'REJECTED' && ' (被驳回)'}
-                      {v.isIntercepted && v.vehicleAuditStatus !== 'REJECTED' && ' (已反馈)'}
-                    </span>
-                  ))}
-                </div>
+                {/* 目标车辆清单 或 文本指令要求 */}
+                {task.directiveType === 'TEXT' ? (
+                  <div className="space-y-2 bg-indigo-50/40 p-3 rounded-lg border border-indigo-100/80 text-xs">
+                    <div className="flex items-start gap-2">
+                      <div className="p-1 rounded bg-indigo-100 text-indigo-700 shrink-0 mt-0.5">
+                        <FileText className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="font-semibold text-indigo-950 flex items-center justify-between">
+                          <span>指令内容及核查处置要求：</span>
+                          {task.attachments && task.attachments.length > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white border border-indigo-200 text-indigo-700 text-[10px] font-medium">
+                              <Paperclip className="w-3 h-3" />
+                              <span>公文附件 ({task.attachments.length})</span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-600 line-clamp-2 leading-relaxed">
+                          {task.content || '无具体文字要求'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 下级节点流转处置进度 */}
+                    {task.executionNodes && task.executionNodes.length > 0 && (
+                      <div className="pt-2 border-t border-indigo-100/60 flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className="text-slate-500 font-medium">节点执行进度：</span>
+                        {task.executionNodes.map((n) => {
+                          let badgeStyle = 'bg-slate-100 text-slate-700 border-slate-200';
+                          let statusLabel = '待签收';
+                          if (n.status === 'SIGNED') {
+                            badgeStyle = 'bg-blue-50 text-blue-700 border-blue-200';
+                            statusLabel = '已签收·待反馈';
+                          } else if (n.status === 'FEEDBACK_SUBMITTED') {
+                            badgeStyle = 'bg-purple-50 text-purple-700 border-purple-200';
+                            statusLabel = '已反馈·待初审';
+                          } else if (n.status === 'AUDITED_PASS') {
+                            badgeStyle = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                            statusLabel = '初审通过·待终审';
+                          } else if (n.status === 'REJECTED') {
+                            badgeStyle = 'bg-rose-50 text-rose-700 border-rose-200';
+                            statusLabel = '已驳回·待整改';
+                          } else if (n.status === 'COMPLETED') {
+                            badgeStyle = 'bg-emerald-100 text-emerald-800 border-emerald-300';
+                            statusLabel = '终审通过·已办结';
+                          } else if (n.status === 'DISPATCHED_DOWN') {
+                            badgeStyle = 'bg-amber-50 text-amber-700 border-amber-200';
+                            statusLabel = '已转派中队';
+                          }
+
+                          return (
+                            <span
+                              key={n.id}
+                              className={`px-2 py-0.5 rounded border font-mono text-[10px] flex items-center gap-1 ${badgeStyle}`}
+                            >
+                              <span className="font-sans font-medium">{n.unitName}</span>
+                              <span className="opacity-75 font-semibold">({statusLabel})</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    <span className="text-slate-500 font-medium">涉及车辆 ({task.vehicles.length} 辆)：</span>
+                    {task.vehicles.map((v) => (
+                      <span
+                        key={v.id}
+                        className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
+                          v.vehicleAuditStatus === 'REJECTED'
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : v.isIntercepted
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : 'bg-white border-slate-200 text-slate-800'
+                        }`}
+                      >
+                        {v.plateNo}
+                        {v.vehicleAuditStatus === 'REJECTED' && ' (被驳回)'}
+                        {v.isIntercepted && v.vehicleAuditStatus !== 'REJECTED' && ' (已反馈)'}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* 如果是文本指令且有被驳回的节点，直观展示驳回整改意见 */}
+                {task.directiveType === 'TEXT' && (() => {
+                  const rejectedNode = task.executionNodes.find(n => n.status === 'REJECTED');
+                  if (!rejectedNode) return null;
+                  const rejectAudit = rejectedNode.branchAudit?.result === 'REJECT' ? rejectedNode.branchAudit : rejectedNode.brigadeAudit;
+                  return (
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900 space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                        <span>【审核驳回待整改】{rejectedNode.unitName} 反馈未通过 · 意见：</span>
+                      </div>
+                      <div className="text-rose-950 font-medium pl-5 leading-relaxed">
+                        {rejectAudit?.opinion || rejectAudit?.remarks || '请核实处置凭证后重新补充报送。'}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* 退单信息展示 (若有) */}
                 {task.returnRequest && (
@@ -1532,19 +1705,34 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
                     {activeTab === 'PENDING_FEEDBACK' && (
                       <button
                         type="button"
-                        onClick={() => onSelectTask(task, filteredTasks)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOperationTask({ task, mode: 'FEEDBACK' });
+                        }}
                         className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
                       >
-                        <Car className="w-3.5 h-3.5" />
-                        <span>逐车填报反馈</span>
+                        {task.directiveType === 'TEXT' ? (
+                          <>
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>填报反馈</span>
+                          </>
+                        ) : (
+                          <>
+                            <Car className="w-3.5 h-3.5" />
+                            <span>逐车填报反馈</span>
+                          </>
+                        )}
                       </button>
                     )}
 
-                    {/* 驳回待整改 (中队) */}
+                    {/* 驳回待整改 */}
                     {activeTab === 'REJECTED_FIX' && (
                       <button
                         type="button"
-                        onClick={() => onSelectTask(task, filteredTasks)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOperationTask({ task, mode: 'REJECTED_FIX' });
+                        }}
                         className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
                       >
                         <AlertTriangle className="w-3.5 h-3.5" />
@@ -1556,42 +1744,48 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
                     {(activeTab === 'BRIGADE_AUDIT' || activeTab === 'BRANCH_AUDIT') && (
                       <button
                         type="button"
-                        onClick={() => onSelectTask(task, filteredTasks)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOperationTask({
+                            task,
+                            mode: activeTab === 'BRIGADE_AUDIT' ? 'BRIGADE_AUDIT' : 'BRANCH_AUDIT',
+                          });
+                        }}
                         className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1"
                       >
                         <FileCheck className="w-3.5 h-3.5" />
-                        <span>{activeTab === 'BRIGADE_AUDIT' ? '立即初审' : '立即终审归档'}</span>
+                        <span>{activeTab === 'BRIGADE_AUDIT' ? '大队初审' : '支队终审'}</span>
                       </button>
                     )}
 
-                    {/* 审批退单 */}
+                    {/* 错件退单审批：合并为一个 退回申请审批 按钮 */}
                     {activeTab === 'RETURN_CONFIRM' && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={(e) => handleRejectReturn(task, e)}
-                          className="px-3 py-1.5 text-xs text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg"
-                        >
-                          驳回退回申请
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => handleApproveReturn(task, e)}
-                          className="px-4 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs"
-                        >
-                          同意退回 (更正重发)
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openReturnApprovalModal(task);
+                        }}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <FileCheck className="w-3.5 h-3.5" />
+                        <span>退回申请审批</span>
+                      </button>
                     )}
 
-                    {/* 更正重发 */}
+                    {/* 退单待更正重发：调用 onReDispatchTask 打开指令修改页面进行具体指令内容修改 */}
                     {activeTab === 'RETURNED_DRAFT' && (
                       <button
                         type="button"
-                        onClick={() => onSelectTask(task, filteredTasks)}
-                        className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs flex items-center space-x-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onReDispatchTask) {
+                            onReDispatchTask(task);
+                          }
+                        }}
+                        className="px-4 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition active:scale-95 flex items-center space-x-1.5 cursor-pointer"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <Send className="w-3.5 h-3.5" />
                         <span>更正并重新下发</span>
                       </button>
                     )}
@@ -1932,6 +2126,233 @@ export const MyTodoView: React.FC<MyTodoViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 错件退单审批弹窗 (支持选择 同意/驳回 并填写具体理由) */}
+      {returnApprovalTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-xl w-full max-w-xl shadow-2xl overflow-hidden my-4">
+            {/* 弹窗头部 */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
+                  <FileCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">错件退回申请审批</h3>
+                  <p className="text-xs text-slate-500">
+                    指令编号：<span className="font-mono font-semibold text-blue-700">{returnApprovalTask.taskNo}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReturnApprovalTask(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 弹窗内容 */}
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* 指令与下级申请信息卡片 */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                <div className="font-bold text-slate-800 text-sm">
+                  {returnApprovalTask.title}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-slate-600 pt-1 border-t border-slate-200/70">
+                  <div>
+                    申请单位：
+                    <strong className="text-slate-800">
+                      {returnApprovalTask.returnRequest?.requestedByUnitName || '下级责任单位'}
+                    </strong>
+                  </div>
+                  <div>
+                    申请人员：
+                    <span className="text-slate-700 font-medium">
+                      {returnApprovalTask.returnRequest?.requestedByName || '执勤民警'}
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    申请时间：
+                    <span className="font-mono text-slate-700">
+                      {returnApprovalTask.returnRequest?.requestedTime || returnApprovalTask.dispatchTime}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 退单原因 */}
+                <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-950">
+                  <div className="font-bold text-amber-900 flex items-center gap-1 mb-1">
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                    <span>下级申报退单理由：</span>
+                  </div>
+                  <div className="leading-relaxed font-medium">
+                    {returnApprovalTask.returnRequest?.reason || '申请错件退回修改。'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 审批结论选择 (同意 / 驳回) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  审批结论 <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label
+                    className={`flex items-start space-x-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                      approvalDecision === 'AGREE'
+                        ? 'bg-emerald-50/80 border-emerald-400 text-emerald-950 ring-1 ring-emerald-400'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="approvalDecision"
+                      value="AGREE"
+                      checked={approvalDecision === 'AGREE'}
+                      onChange={() => handleSelectDecision('AGREE')}
+                      className="mt-0.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="text-xs space-y-0.5">
+                      <div className="font-bold text-emerald-800 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>同意退回修改</span>
+                      </div>
+                      <div className="text-[11px] text-emerald-700/80">
+                        释放下级执行责任，工单退回待发池由发令人员更正重发
+                      </div>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-start space-x-2.5 p-3 rounded-xl border cursor-pointer transition ${
+                      approvalDecision === 'REJECT'
+                        ? 'bg-rose-50/80 border-rose-400 text-rose-950 ring-1 ring-rose-400'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="approvalDecision"
+                      value="REJECT"
+                      checked={approvalDecision === 'REJECT'}
+                      onChange={() => handleSelectDecision('REJECT')}
+                      className="mt-0.5 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                    />
+                    <div className="text-xs space-y-0.5">
+                      <div className="font-bold text-rose-800 flex items-center gap-1">
+                        <Ban className="w-3.5 h-3.5 text-rose-600" />
+                        <span>驳回退回申请</span>
+                      </div>
+                      <div className="text-[11px] text-rose-700/80">
+                        维持原派发责任，下级单位须继续开展排查查扣处置
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* 审批理由说明 (同意/驳回 理由) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-bold text-slate-700">
+                    {approvalDecision === 'AGREE' ? '同意理由说明' : '驳回理由说明'}{' '}
+                    <span className="text-rose-500">*</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400">将反馈至申请单位与指令流转存证</span>
+                </div>
+
+                {/* 快捷理由预设标签 */}
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(approvalDecision === 'AGREE'
+                    ? [
+                        '核实属非本辖区管辖，同意退回修改，工单重回发令池重新下发。',
+                        '经研判目标车辆行驶轨迹已纠偏，同意撤回本单位待办。',
+                        '排查责任单位确实下发有误，核准同意退回修改。',
+                      ]
+                    : [
+                        '经指挥中心核实，该车辆仍在该辖区主要通道，证据不足以退单，维持原派发，请继续排查拦截。',
+                        '卡口最新预警显示车辆仍在本责任网格内，请加派执勤力量处置。',
+                        '退回证明材料不足，不符合错件退单标准，请严格按照指令要求执行。',
+                      ]
+                  ).map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setApprovalReason(preset)}
+                      className={`text-[11px] px-2 py-1 rounded-md border text-left transition cursor-pointer ${
+                        approvalReason === preset
+                          ? approvalDecision === 'AGREE'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 font-medium'
+                            : 'bg-rose-100 text-rose-800 border-rose-300 font-medium'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+
+                <textarea
+                  value={approvalReason}
+                  onChange={(e) => setApprovalReason(e.target.value)}
+                  rows={3}
+                  placeholder={
+                    approvalDecision === 'AGREE'
+                      ? '请填写同意退回的核准意见与说明...'
+                      : '请填写驳回退回的具体原因与排查指导意见...'
+                  }
+                  className="w-full border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            {/* 底部按钮 */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                onClick={() => setReturnApprovalTask(null)}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-xs text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReturnApproval}
+                disabled={!approvalReason.trim()}
+                className={`px-5 py-2 rounded-lg text-white text-xs font-bold shadow-xs transition active:scale-95 disabled:opacity-50 cursor-pointer flex items-center space-x-1.5 ${
+                  approvalDecision === 'AGREE'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                <Check className="w-4 h-4" />
+                <span>{approvalDecision === 'AGREE' ? '确认同意退回' : '确认驳回申请'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 指令专属处置/审核操作弹窗 (仅展示目标车辆处置总表) */}
+      {operationTask && (
+        <TaskOperationModal
+          isOpen={true}
+          onClose={() => setOperationTask(null)}
+          task={operationTask.task}
+          mode={operationTask.mode}
+          currentRole={currentRole}
+          onAddNotice={onAddNotice}
+          onUpdateTask={(updatedTask) => {
+            onUpdateTask(updatedTask);
+            setOperationTask({
+              ...operationTask,
+              task: updatedTask,
+            });
+          }}
+        />
       )}
     </div>
   );

@@ -887,13 +887,43 @@ export const INITIAL_TASKS: DispatchTask[] = [
     completionRule: 'ANY_COMPLETE',
     content: '针对早高峰非机动车闯红灯、逆行、未佩戴头盔等违法行为开展现场联合执法与文书开具。',
     targetArea: '市中心重点商圈与学校周边主要交叉路口',
+    directiveType: 'VEHICLE',
     vehicles: [
       {
         id: 'v-701',
         plateNo: '浙A·E6682',
         plateType: '普通摩托车',
         riskReason: '多次逆行闯红灯未处理',
-        isIntercepted: false,
+        isIntercepted: true,
+        vehicleAuditStatus: 'REJECTED',
+        interceptedTime: '2026-09-04 07:50:00',
+        interceptedByUnitId: 'squadron-01-01',
+        interceptedByUnitName: '一大队·城东一中队',
+        rejectionDept: '直属一大队指挥室',
+        rejectionReason: '上传的简易程序处罚决定书编号不清晰，且未附带驾驶人现场核验证件照片，缺少处罚决定书当事人签字页，请执勤民警补齐佐证后重新上报。',
+        rejectionTime: '2026-09-04 08:30:00',
+        previousFeedback: {
+          punishmentCode: '3301062026090401',
+          punishmentType: '现场处罚',
+          location: '延安路与平海路交叉口执勤卡点',
+          disposalTime: '2026-09-04 07:50:00',
+          remarks: '早高峰执勤发现当事人逆行且未佩戴安全头盔，已拦停并开具简易处罚文书。',
+          policeOfficer: '陈勇 (034981)',
+          images: [
+            'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80',
+          ],
+        },
+        disposalRecord: {
+          punishmentCode: '3301062026090401',
+          punishmentType: '现场处罚',
+          disposalTime: '2026-09-04 07:50:00',
+          location: '延安路与平海路交叉口执勤卡点',
+          policeOfficer: '陈勇 (034981)',
+          notes: '早高峰执勤发现当事人逆行且未佩戴安全头盔，已拦停并开具简易处罚文书。',
+          images: [
+            'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80',
+          ],
+        },
       }
     ],
     targetBrigadeIds: ['brigade-01'],
@@ -917,10 +947,28 @@ export const INITIAL_TASKS: DispatchTask[] = [
         unitId: 'squadron-01-01',
         unitName: '一大队·城东一中队',
         unitLevel: 'squadron',
-        status: 'SIGNED',
+        status: 'REJECTED',
         signedTime: '2026-09-04 07:30:00',
         signedBy: '陈勇',
-        vehiclesStatus: [],
+        vehiclesStatus: [
+          {
+            vehicleId: 'v-701',
+            plateNo: '浙A·E6682',
+            plateType: '普通摩托车',
+            isIntercepted: true,
+            auditStatus: 'REJECTED',
+            rejectionDept: '直属一大队指挥室',
+            rejectionReason: '上传的简易程序处罚决定书编号不清晰，且未附带驾驶人现场核验证件照片，缺少处罚决定书当事人签字页，请执勤民警补齐佐证后重新上报。',
+            rejectionTime: '2026-09-04 08:30:00',
+            feedbackRemarks: '早高峰执勤发现当事人逆行且未佩戴安全头盔，已拦停并开具简易处罚文书。',
+          }
+        ],
+        brigadeAudit: {
+          auditor: '李卫民 (大队长)',
+          auditTime: '2026-09-04 08:30:00',
+          result: 'REJECT',
+          remarks: '上传的简易程序处罚决定书编号不清晰，且未附带驾驶人现场核验证件照片，缺少处罚决定书当事人签字页，请执勤民警补齐佐证后重新上报。',
+        }
       }
     ],
     actionLogs: [
@@ -1344,6 +1392,775 @@ export const INITIAL_TASKS: DispatchTask[] = [
         details: '下发直属二大队'
       }
     ]
+  },
+  {
+    id: 'task-016',
+    taskNo: 'ZD-20260906-003',
+    title: '【综合勤务】国庆假期主要进出城通道道路交通安全综合隐患排查与疏导专项指令',
+    directiveType: 'TEXT',
+    category: '隐患治理',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 08:30:00',
+    dispatchTime: '2026-09-06 08:45:00',
+    deadline: '2026-09-06 18:00:00',
+    urgency: '紧急',
+    completionRule: 'ALL_COMPLETE',
+    content: '国庆长假将至，针对秋石高架、德胜快速路、东客运站枢纽及景区周边重点道路开展道路通行安全隐患拉网式排查。排查重点包括施工围挡合规性、交安设施反光完好率、早晚高峰易拥堵节点警力布设。各责任单位排查后需汇总图文并茂的处置报告上报。',
+    targetArea: '秋石高架、德胜快速路互通立交及枢纽周边道路',
+    attachments: [
+      {
+        id: 'att-16-1',
+        name: '2026年国庆重点保障路段与交安隐患排查清单及技术指引.pdf',
+        size: '3.4 MB',
+        type: 'application/pdf',
+        uploadedAt: '2026-09-06 08:30:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      },
+      {
+        id: 'att-16-2',
+        name: '市区主要进出城通道易拥堵节点警力配置预案示意图.png',
+        size: '1.2 MB',
+        type: 'image/png',
+        uploadedAt: '2026-09-06 08:32:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01', 'brigade-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-b1601',
+        taskId: 'task-016',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'DISPATCHED_DOWN',
+        signedTime: '2026-09-06 09:00:00',
+        signedBy: '李卫民',
+        dispatchedDownTime: '2026-09-06 09:10:00',
+        dispatchedToSquadronIds: ['squadron-01-01'],
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-s1601',
+        taskId: 'task-016',
+        parentId: 'node-b1601',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        status: 'FEEDBACK_SUBMITTED',
+        signedTime: '2026-09-06 09:15:00',
+        signedBy: '陈勇',
+        feedbackTime: '2026-09-06 14:30:00',
+        feedbackOfficer: '陈勇 (034981)',
+        feedbackText: '城东一中队已完成辖区秋石高架、德胜快速路互通立交及东站枢纽周边等6处重点施工路段安全隐患现场拉网式排查。排查发现警示反光标识破损2处、临时围挡底座松动1处，已现场下发《隐患限期整改通知书》，督促施工单位当场完成加固与标牌更换；增派早晚高峰铁骑定点巡逻警力4组，设立临时交通疏导点2处，目前道路通行秩序井然。',
+        feedbackAttachments: [
+          {
+            id: 'att-fb-1601',
+            name: '秋石高架施工隐患现场加固照片.jpg',
+            size: '1.8 MB',
+            type: 'image/jpeg',
+            uploadedAt: '2026-09-06 14:28:00',
+            uploadedBy: '陈勇 (034981)',
+            url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80',
+          },
+          {
+            id: 'att-fb-1602',
+            name: '德胜立交隐患整改告知书签字件.jpg',
+            size: '2.1 MB',
+            type: 'image/jpeg',
+            uploadedAt: '2026-09-06 14:29:00',
+            uploadedBy: '陈勇 (034981)',
+            url: 'https://images.unsplash.com/photo-1508974239320-0a029497e820?auto=format&fit=crop&w=600&q=80',
+          },
+        ],
+        vehiclesStatus: [],
+        brigadeAudit: {
+          auditor: '李卫民 (大队长)',
+          auditTime: '2026-09-06 15:10:00',
+          result: 'PASS',
+          remarks: '大队核实该中队现场佐证充分，隐患整改及定点勤务落实到位，初审合格，报送市支队终审。',
+        }
+      },
+      {
+        id: 'node-b1602',
+        taskId: 'task-016',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-06 09:20:00',
+        signedBy: '赵建军',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1601',
+        timestamp: '2026-09-06 08:45:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '文本指令下发',
+        details: '市交警支队向直属一大队、直属二大队下发隐患排查综合勤务文本指令。'
+      },
+      {
+        id: 'log-1602',
+        timestamp: '2026-09-06 14:30:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队提交反馈',
+        details: '城东一中队录入隐患排查报告并上传2张现场佐证照片，提交大队初审。'
+      },
+      {
+        id: 'log-1603',
+        timestamp: '2026-09-06 15:10:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队初审通过',
+        details: '直属一大队完成城东一中队处置报告初审，审核结果【合格】，转呈支队终审。'
+      }
+    ]
+  },
+  {
+    id: 'task-017',
+    taskNo: 'DD-20260906-004',
+    title: '【专项整治】物流园区周边货车占道装卸及违停综合排查指令（审核驳回·待整改）',
+    directiveType: 'TEXT',
+    category: '专项整治',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-01',
+    creatorUnitName: '直属一大队 (市中心城区)',
+    creatorName: '李卫民 (大队长)',
+    createdAt: '2026-09-06 10:00:00',
+    dispatchTime: '2026-09-06 10:15:00',
+    deadline: '2026-09-06 17:30:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '近期群众反映园区周边物流主通道夜间重型车辆占道装卸货物严重阻碍消防通道，请各中队巡查取证，责令整改并依法从严处罚，形成整改汇总清单。',
+    targetArea: '物流园主路、仓储大道沿线',
+    attachments: [
+      {
+        id: 'att-17-1',
+        name: '市民热线反映物流园区占道违停点位汇编.docx',
+        size: '850 KB',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        uploadedAt: '2026-09-06 10:00:00',
+        uploadedBy: '李卫民 (大队长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['squadron-01-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-s1701',
+        taskId: 'task-017',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'REJECTED',
+        signedTime: '2026-09-06 10:30:00',
+        signedBy: '陈勇',
+        feedbackTime: '2026-09-06 11:20:00',
+        feedbackOfficer: '陈勇 (034981)',
+        feedbackText: '我中队已巡查了物流园外围道路，现场发现3起违章占道装卸行为，执勤人员已口头告知并进行劝离。',
+        feedbackAttachments: [
+          {
+            id: 'att-fb-1701',
+            name: '物流园外围巡查违章照片.jpg',
+            size: '980 KB',
+            type: 'image/jpeg',
+            uploadedAt: '2026-09-06 11:18:00',
+            uploadedBy: '陈勇 (034981)',
+            url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80',
+          }
+        ],
+        vehiclesStatus: [],
+        brigadeAudit: {
+          auditor: '李卫民 (大队长)',
+          auditTime: '2026-09-06 13:40:00',
+          result: 'REJECT',
+          remarks: '反馈内容过于简略，缺少具体违停车辆车牌号、现场开具的《违法停车告知单》文书凭证及复查取证照片；请补充详细整治文书及点位整改佐证材料后重新报送。',
+        }
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1701',
+        timestamp: '2026-09-06 10:15:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '指令下发',
+        details: '大队下发物流园区货车专项整治文本指令至城东一中队。'
+      },
+      {
+        id: 'log-1702',
+        timestamp: '2026-09-06 11:20:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '提交初次反馈',
+        details: '城东一中队提交口头劝离反馈。'
+      },
+      {
+        id: 'log-1703',
+        timestamp: '2026-09-06 13:40:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '初审驳回整改',
+        details: '审核驳回，意见：缺少具体车牌登记与执法文书照片，退回中队补充佐证重报。'
+      }
+    ]
+  },
+  {
+    id: 'task-018',
+    taskNo: 'ZD-20260906-005',
+    title: '【交通组织】中秋灯会期间景区周边单行循环组织与分流预案实地勘验',
+    directiveType: 'TEXT',
+    category: '勤务调度',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 09:00:00',
+    dispatchTime: '2026-09-06 09:15:00',
+    deadline: '2026-09-06 16:00:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '为保障中秋大型民俗灯会期间景区周边道路畅通，各中队对景区周边南山路、杨公堤及北山街单向循环微循环组织线路进行实地步行勘验，核实交通诱导标牌清晰度、应急掉头车道开口位置及备用停车场饱和度，并形成勘验文字反馈与现场实景图片。',
+    targetArea: '西湖景区环湖主支干道',
+    attachments: [
+      {
+        id: 'att-18-1',
+        name: '中秋灯会期间环湖微循环交通管制与诱导组织总图.pdf',
+        size: '4.8 MB',
+        type: 'application/pdf',
+        uploadedAt: '2026-09-06 09:00:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-s1801',
+        taskId: 'task-018',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'SIGNED',
+        signedTime: '2026-09-06 09:30:00',
+        signedBy: '陈勇',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1801',
+        timestamp: '2026-09-06 09:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '文本指令下发',
+        details: '下发单向循环组织勘验文本指令。'
+      },
+      {
+        id: 'log-1802',
+        timestamp: '2026-09-06 09:30:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队签收指令',
+        details: '城东一中队已签收，正在安排民警现场勘验。'
+      }
+    ]
+  },
+  {
+    id: 'task-019',
+    taskNo: 'DD-20260906-006',
+    title: '【护学安保】秋季开学季重点中小学幼儿园周边“护学岗”勤务与交通标志标线排查指令（中队待签收）',
+    directiveType: 'TEXT',
+    category: '勤务调度',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-01',
+    creatorUnitName: '直属一大队 (市中心城区)',
+    creatorName: '李卫民 (大队长)',
+    createdAt: '2026-09-06 11:00:00',
+    dispatchTime: '2026-09-06 11:10:00',
+    deadline: '2026-09-06 18:00:00',
+    urgency: '紧急',
+    completionRule: 'ALL_COMPLETE',
+    content: '秋季开学在即，请城东一中队、机动铁骑中队于开学前对辖区实验小学、第二中学及周边幼儿园门前交通标志标线、减速带、防冲撞隔离设施开展全面安全体检，落实早晚“高峰护学岗”执勤警力编组，确保学生出入平安。排查情况请形成文字报告并附整改照片上传大队。',
+    targetArea: '城区各重点中小学及幼儿园周边道路',
+    attachments: [
+      {
+        id: 'att-19-1',
+        name: '2026年秋季重点中小学校园护学岗点位表及勤务规范.pdf',
+        size: '2.4 MB',
+        type: 'application/pdf',
+        uploadedAt: '2026-09-06 11:00:00',
+        uploadedBy: '李卫民 (大队长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['squadron-01-01', 'squadron-01-03'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-s1901',
+        taskId: 'task-019',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-s1902',
+        taskId: 'task-019',
+        unitId: 'squadron-01-03',
+        unitName: '一大队·机动铁骑中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-1901',
+        timestamp: '2026-09-06 11:10:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队指令下发',
+        details: '直属一大队下发秋季开学季护学岗文本指令至辖区城东一中队、机动铁骑中队，等待中队签收。'
+      }
+    ]
+  },
+  {
+    id: 'task-020',
+    taskNo: 'DD-20260906-007',
+    title: '【隐患整治】国省道沿线平交路口减速震荡标线磨损及视距遮挡隐患专项整治指令（待大队初审）',
+    directiveType: 'TEXT',
+    category: '隐患治理',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-01',
+    creatorUnitName: '直属一大队 (市中心城区)',
+    creatorName: '李卫民 (大队长)',
+    createdAt: '2026-09-06 08:30:00',
+    dispatchTime: '2026-09-06 08:45:00',
+    deadline: '2026-09-06 17:00:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '国省道沿线平交路口为交通事故多发区域。城东一中队对辖区平交路口视线盲区、震荡标线磨损情况进行拉网式摸排，形成整改汇总台账送大队初审。',
+    targetArea: 'G320国道、S101省道平交路口',
+    attachments: [
+      {
+        id: 'att-20-1',
+        name: '国省道平交路口安全设施摸排工作指引.doc',
+        size: '1.1 MB',
+        type: 'application/msword',
+        uploadedAt: '2026-09-06 08:30:00',
+        uploadedBy: '李卫民 (大队长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['squadron-01-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-s2001',
+        taskId: 'task-020',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'FEEDBACK_SUBMITTED',
+        signedTime: '2026-09-06 09:00:00',
+        signedBy: '陈勇',
+        feedbackTime: '2026-09-06 14:15:00',
+        feedbackOfficer: '陈勇 (034981)',
+        feedbackText: '我中队已完成辖区G320国道平交路口全覆盖实地排查，共摸排路口6处，发现减速震荡标线磨损2处、绿化灌木视线遮挡隐患1处。已现场开具《隐患整改移交建议函》送达公路事业发展中心，并加装临时警示爆闪灯2组。整改台账与现场隐患整改前后对比照片已上传，请大队予以初审。',
+        feedbackAttachments: [
+          {
+            id: 'att-fb-2001',
+            name: '平交路口减速标线与视距隐患整改台账.xlsx',
+            size: '420 KB',
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            uploadedAt: '2026-09-06 14:10:00',
+            uploadedBy: '陈勇 (034981)',
+          },
+          {
+            id: 'att-fb-2002',
+            name: '平交路口绿化视线遮挡现场照片.jpg',
+            size: '2.4 MB',
+            type: 'image/jpeg',
+            uploadedAt: '2026-09-06 14:12:00',
+            uploadedBy: '陈勇 (034981)',
+            url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=600&q=80',
+          }
+        ],
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-2001',
+        timestamp: '2026-09-06 08:45:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队指令下发',
+        details: '下发平交路口视距遮挡隐患排查文本指令。'
+      },
+      {
+        id: 'log-2002',
+        timestamp: '2026-09-06 09:00:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队签收指令',
+        details: '城东一中队陈勇已签收，开始组织实地摸排。'
+      },
+      {
+        id: 'log-2003',
+        timestamp: '2026-09-06 14:15:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队提交反馈',
+        details: '城东一中队完成实地排查，录入反馈报告并上传2份佐证凭证，等待直属一大队初审。'
+      }
+    ]
+  },
+  {
+    id: 'task-021',
+    taskNo: 'ZD-20260906-008',
+    title: '【安全监管】危险化学品道路运输重点源头企业动态监控与充装合规性联合检查指令（待大队签收/转派）',
+    directiveType: 'TEXT',
+    category: '重点管控',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 10:30:00',
+    dispatchTime: '2026-09-06 10:45:00',
+    deadline: '2026-09-06 18:30:00',
+    urgency: '特急',
+    completionRule: 'ALL_COMPLETE',
+    content: '市支队联合交通应急部门开展危化品运输企业安全督导专项行动。各大队对辖区危化品运输企业GPS动态监控制度落实、危化品罐车电子运单填报及罐体检验合格有效性进行突击上门检查，并对驾驶人及押运员开展安全警示教育，排查记录与整改情况统一报送支队。',
+    targetArea: '全市危化品仓储与运输企业',
+    attachments: [
+      {
+        id: 'att-21-1',
+        name: '危化品道路运输企业源头动态监管联合检查操作要点.pdf',
+        size: '3.6 MB',
+        type: 'application/pdf',
+        uploadedAt: '2026-09-06 10:30:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01', 'brigade-02'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-b2101',
+        taskId: 'task-021',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      },
+      {
+        id: 'node-b2102',
+        taskId: 'task-021',
+        unitId: 'brigade-02',
+        unitName: '直属二大队 (工业园区)',
+        unitLevel: 'brigade',
+        status: 'PENDING_SIGN',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-2101',
+        timestamp: '2026-09-06 10:45:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '支队文本指令下发',
+        details: '市交警支队指挥中心向直属一大队、直属二大队下发危化品重点源头企业联合检查文本指令。'
+      }
+    ]
+  },
+  {
+    id: 'task-022',
+    taskNo: 'ZD-20260906-009',
+    title: '【重要勤务】高级别重要政要过境车队城区骨干过境通道一级交通安保实地踏勘指令（大队自办直办）',
+    directiveType: 'TEXT',
+    category: '专项整治',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-06 08:00:00',
+    dispatchTime: '2026-09-06 08:15:00',
+    deadline: '2026-09-06 16:30:00',
+    urgency: '特急',
+    completionRule: 'ALL_COMPLETE',
+    content: '重要政要车队拟于近期过境本市，请直属一大队大队长带班组织大队专班对过境快速路主线及关键立交匝道进行实地步行踏勘，重点核查应急掉头缺口、视频盲区分布、信号绿波带保障方案及备用分流线路，由大队综合科直接编制踏勘文字报告并回传支队指挥中心。',
+    targetArea: '中河高架、复兴立交、江南大道过境段',
+    attachments: [
+      {
+        id: 'att-22-1',
+        name: '一级交通安保骨干通道踏勘要素检查表.docx',
+        size: '1.5 MB',
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        uploadedAt: '2026-09-06 08:00:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'PROCESSING',
+    executionNodes: [
+      {
+        id: 'node-b2201',
+        taskId: 'task-022',
+        unitId: 'brigade-01',
+        unitName: '直属一大队 (市中心城区)',
+        unitLevel: 'brigade',
+        status: 'SIGNED',
+        signedTime: '2026-09-06 08:30:00',
+        signedBy: '李卫民 (大队长)',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-2201',
+        timestamp: '2026-09-06 08:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '支队指令下发',
+        details: '市交警支队下发重要政要过境车队通道安保踏勘指令至直属一大队。'
+      },
+      {
+        id: 'log-2202',
+        timestamp: '2026-09-06 08:30:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队签收自办',
+        details: '直属一大队李卫民已签收，大队专班自办执行，正在组织沿线实地踏勘。'
+      }
+    ]
+  },
+  {
+    id: 'task-023',
+    taskNo: 'DD-20260906-010',
+    title: '【错件退回】高新科技产业园区施工临时通道占道开挖交通疏导核验指令（中队退单·待大队审批）',
+    directiveType: 'TEXT',
+    category: '隐患治理',
+    creatorLevel: 'brigade',
+    creatorUnitId: 'brigade-01',
+    creatorUnitName: '直属一大队 (市中心城区)',
+    creatorName: '李卫民 (大队长)',
+    createdAt: '2026-09-06 09:30:00',
+    dispatchTime: '2026-09-06 09:45:00',
+    deadline: '2026-09-06 17:00:00',
+    urgency: '常规',
+    completionRule: 'ALL_COMPLETE',
+    content: '请城东一中队对高新科技产业园区施工占道开挖手续及夜间反光警示围挡设置情况进行核实，督促落实高峰疏导警力。',
+    targetArea: '高新技术产业园区临时道路',
+    attachments: [
+      {
+        id: 'att-23-1',
+        name: '涉路占道施工审批登记表.pdf',
+        size: '890 KB',
+        type: 'application/pdf',
+        uploadedAt: '2026-09-06 09:30:00',
+        uploadedBy: '李卫民 (大队长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['squadron-01-01'],
+    overallStatus: 'PROCESSING',
+    returnRequest: {
+      status: 'PENDING_CONFIRM',
+      requestedByUnitId: 'squadron-01-01',
+      requestedByUnitName: '一大队·城东一中队',
+      requestedByName: '陈勇 (中队长)',
+      requestedTime: '2026-09-06 11:30:00',
+      reason: '【非本辖区】经执勤民警现场查勘，该施工临时通道开挖位置位于江南大道与东信路南侧，属于滨江开发区大队管界，超出城东一中队管辖红线，特申请退单改派。'
+    },
+    executionNodes: [
+      {
+        id: 'node-s2301',
+        taskId: 'task-023',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'SIGNED',
+        signedTime: '2026-09-06 10:00:00',
+        signedBy: '陈勇',
+        vehiclesStatus: [],
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-2301',
+        timestamp: '2026-09-06 09:45:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队指令下发',
+        details: '下发高新园区施工通道核查指令至城东一中队。'
+      },
+      {
+        id: 'log-2302',
+        timestamp: '2026-09-06 10:00:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队签收指令',
+        details: '城东一中队已签收。'
+      },
+      {
+        id: 'log-2303',
+        timestamp: '2026-09-06 11:30:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队发起退单申请',
+        details: '现场查勘核实施工点位于二大队辖区，提起错件退回申请，等待直属一大队李卫民审批。'
+      }
+    ]
+  },
+  {
+    id: 'task-024',
+    taskNo: 'ZD-20260906-011',
+    title: '【闭环办结】极端强降雨期间易积水下穿隧道及低洼涵洞安全隐患排查整治指令（全流程已结案）',
+    directiveType: 'TEXT',
+    category: '隐患治理',
+    creatorLevel: 'branch',
+    creatorUnitId: 'branch-01',
+    creatorUnitName: '市交警支队指挥中心',
+    creatorName: '张志刚 (支队指挥长)',
+    createdAt: '2026-09-05 08:00:00',
+    dispatchTime: '2026-09-05 08:15:00',
+    deadline: '2026-09-05 18:00:00',
+    urgency: '特急',
+    completionRule: 'ALL_COMPLETE',
+    content: '气象预警显示近期有特大暴雨，请直属一大队组织中队对辖区所有下穿隧道、低洼立交桥下积水点开展逐点拉网式排查，备足应急抽水泵、警示标志与防汛沙袋，确保汛期极端天气下不发生车辆被淹死伤事故。',
+    targetArea: '秋涛路下穿隧道、复兴立交桥下低洼处',
+    attachments: [
+      {
+        id: 'att-24-1',
+        name: '全市易积水道路与立交桥下穿涵洞重点部位清册.xlsx',
+        size: '1.9 MB',
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        uploadedAt: '2026-09-05 08:00:00',
+        uploadedBy: '张志刚 (支队指挥长)',
+      }
+    ],
+    vehicles: [],
+    targetBrigadeIds: ['brigade-01'],
+    overallStatus: 'COMPLETED',
+    executionNodes: [
+      {
+        id: 'node-s2401',
+        taskId: 'task-024',
+        unitId: 'squadron-01-01',
+        unitName: '一大队·城东一中队',
+        unitLevel: 'squadron',
+        parentId: 'brigade-01',
+        status: 'AUDITED_PASS',
+        signedTime: '2026-09-05 08:30:00',
+        signedBy: '陈勇',
+        feedbackTime: '2026-09-05 11:30:00',
+        feedbackOfficer: '陈勇 (034981)',
+        feedbackText: '中队对辖区秋涛南路下穿隧道、复兴立交桥下低洼涵洞等3处易涝隐患点进行了拉网式排查。已联合市政排水部门完成泵站试运行，备齐防汛沙袋80袋、挡水板4组，设置“积水警戒线”警示标牌3面。排查整治落实到位。',
+        feedbackAttachments: [
+          {
+            id: 'att-fb-2401',
+            name: '下穿隧道积水标尺与警示标牌安装照片.jpg',
+            size: '1.5 MB',
+            type: 'image/jpeg',
+            uploadedAt: '2026-09-05 11:28:00',
+            uploadedBy: '陈勇 (034981)',
+            url: 'https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=400&q=80',
+          }
+        ],
+        vehiclesStatus: [],
+        brigadeAudit: {
+          auditor: '李卫民 (大队长)',
+          auditorName: '李卫民 (大队长)',
+          auditTime: '2026-09-05 14:00:00',
+          result: 'PASS',
+          remarks: '大队核实该中队现场佐证充分，防汛排涝应急物资准备到位，初审合格。',
+          opinion: '大队核实该中队现场佐证充分，防汛排涝应急物资准备到位，初审合格。'
+        },
+        branchAudit: {
+          auditor: '张志刚 (支队指挥长)',
+          auditorName: '张志刚 (支队指挥长)',
+          auditTime: '2026-09-05 15:30:00',
+          result: 'PASS',
+          remarks: '支队指挥中心终审核验通过，防汛隐患整改闭环，准予办结归档。',
+          opinion: '支队指挥中心终审核验通过，防汛隐患整改闭环，准予办结归档。'
+        }
+      }
+    ],
+    actionLogs: [
+      {
+        id: 'log-2401',
+        timestamp: '2026-09-05 08:15:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '支队指令下发',
+        details: '市交警支队下发易积水点排查文本指令至直属一大队。'
+      },
+      {
+        id: 'log-2402',
+        timestamp: '2026-09-05 08:30:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队签收指令',
+        details: '城东一中队已签收，组织民警现场巡查。'
+      },
+      {
+        id: 'log-2403',
+        timestamp: '2026-09-05 11:30:00',
+        operatorName: '陈勇',
+        operatorUnit: '一大队·城东一中队',
+        action: '中队提交反馈',
+        details: '城东一中队录入易积水点防汛应急排查报告并上传佐证材料。'
+      },
+      {
+        id: 'log-2404',
+        timestamp: '2026-09-05 14:00:00',
+        operatorName: '李卫民',
+        operatorUnit: '直属一大队',
+        action: '大队初审通过',
+        details: '直属一大队李卫民完成初审，审核结论【通过】，报送市支队终审。'
+      },
+      {
+        id: 'log-2405',
+        timestamp: '2026-09-05 15:30:00',
+        operatorName: '张志刚',
+        operatorUnit: '市交警支队指挥中心',
+        action: '支队终审通过',
+        details: '市交警支队指挥中心张志刚终审核验通过，准予办结归档。'
+      },
+      {
+        id: 'log-2406',
+        timestamp: '2026-09-05 15:31:00',
+        operatorName: '系统',
+        operatorUnit: '调度系统核心',
+        action: '全单自动闭环',
+        details: '全单各节点终审通过，指令全流程办结归档。'
+      }
+    ]
   }
 ];
 
@@ -1456,7 +2273,7 @@ export const INITIAL_SYSTEM_NOTICES: SystemNotice[] = [
     actionType: 'VIEW_TASK',
   },
   {
-    id: 'notice-dd-05',
+    id: 'notice-dd-07',
     type: 'TASK_CANCELLED',
     targetUnitId: 'brigade-01',
     targetUnitName: '直属一大队 (市中心城区)',

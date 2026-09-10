@@ -22,6 +22,8 @@ export interface OrgUnit {
 
 export type CompletionRule = 'ANY_COMPLETE' | 'ALL_COMPLETE'; // 任一完成 | 全部完成
 
+export type DirectiveType = 'VEHICLE' | 'TEXT'; // 按车反馈指令 | 文本指令
+
 export type NodeStatus = 
   | 'PENDING_DISPATCH' // 待下发
   | 'PENDING_SIGN'     // 待签收
@@ -35,18 +37,20 @@ export type NodeStatus =
   | 'CANCELLED';       // 已作废/撤销
 
 export interface ThirdPartyDisposalRecord {
-  recordId: string;
-  plateNo: string;
-  plateType: PlateType;
+  recordId?: string;
+  plateNo?: string;
+  plateType?: PlateType;
   disposalTime: string; // 处置时间 (YYYY-MM-DD HH:mm:ss)
-  policeName: string;
-  policeId: string;
+  policeName?: string;
+  policeId?: string;
+  policeOfficer?: string; // 处警民警
   location: string;
-  punishmentType: '现场处罚' | '扣留机动车' | '警告教育' | '移交办案' | '检验排查';
+  punishmentType: '现场处罚' | '扣留机动车' | '警告教育' | '移交办案' | '检验排查' | string;
   punishmentCode: string; // 处罚决定书编号 / 强制措施凭证号
-  illegalBehavior: string;
-  verified: boolean; // 是否有效(处置时间必须晚于指令下发时间)
+  illegalBehavior?: string;
+  verified?: boolean; // 是否有效(处置时间必须晚于指令下发时间)
   notes?: string;
+  images?: string[];
 }
 
 export type TaskCategory = 
@@ -55,6 +59,7 @@ export type TaskCategory =
   | '违法查处' 
   | '重点管控' 
   | '专项整治' 
+  | '勤务调度'
   | '其他';
 
 export interface FeedbackElementConfig {
@@ -99,7 +104,30 @@ export interface TaskVehicle {
   brigadeAuditRemarks?: string;
   branchAuditRemarks?: string;
   rejectReason?: string;
+  rejectionDept?: string;
+  rejectionReason?: string;
+  rejectionTime?: string;
   dynamicFeedbackValues?: Record<string, any>; // 动态配置的反馈要素字段值
+  // 历史填报及驳回记录（用于按车指令整改时显化上级驳回意见和之前填报内容）
+  previousFeedback?: {
+    disposalRecord?: ThirdPartyDisposalRecord;
+    feedbackRemarks?: string;
+    evidenceImages?: string[];
+    punishmentCode?: string;
+    punishmentType?: string;
+    location?: string;
+    disposalTime?: string;
+    remarks?: string;
+    policeOfficer?: string;
+    images?: string[];
+  };
+  rejectionHistory?: {
+    rejecterUnit: string;
+    rejecterName: string;
+    time: string;
+    reason: string;
+    auditLevel: 'BRIGADE' | 'BRANCH';
+  }[];
 }
 
 // 每个中队或大队对应的具体执行节点
@@ -130,31 +158,56 @@ export interface TaskExecutionNode {
     evidenceImages?: string[];
     auditStatus: 'PENDING' | 'SUBMITTED' | 'PASSED' | 'REJECTED';
     rejectReason?: string;
+    rejectionDept?: string;
+    rejectionReason?: string;
+    rejectionTime?: string;
   }[];
   
   feedbackTime?: string;
   feedbackBy?: string;
+  feedbackOfficer?: string; // 处警民警
   feedbackSummary?: string;
+
+  // 文本指令专用反馈内容及佐证材料
+  feedbackText?: string;
+  feedbackAttachments?: TaskAttachment[];
+  feedbackPoliceName?: string;
+
+  // 历史填报及驳回记录（用于文本指令整改时显化上级驳回意见和之前填报内容）
+  rejectionHistory?: {
+    rejecterUnit: string;
+    rejecterName: string;
+    time: string;
+    reason: string;
+    previousFeedbackText?: string;
+    previousAttachments?: TaskAttachment[];
+    auditLevel: 'BRIGADE' | 'BRANCH';
+  }[];
   
   // 审核信息
   brigadeAudit?: {
-    auditor: string;
+    auditor?: string;
+    auditorName?: string;
     auditTime: string;
     result: 'PASS' | 'REJECT';
-    remarks: string;
+    remarks?: string;
+    opinion?: string;
   };
   
   branchAudit?: {
-    auditor: string;
+    auditor?: string;
+    auditorName?: string;
     auditTime: string;
     result: 'PASS' | 'REJECT';
-    remarks: string;
+    remarks?: string;
+    opinion?: string;
   };
 }
 
 export interface DispatchTask {
   id: string;
   taskNo: string; // 指令编号, 如 ZD-20260901-001
+  directiveType?: DirectiveType; // 指令类型：'VEHICLE' (按车反馈指令) | 'TEXT' (文本指令)
   title: string;
   category: TaskCategory; // 调度/指令类别 (车辆缉查, 隐患治理, 违法查处等)
   creatorLevel: 'branch' | 'brigade';
